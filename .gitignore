@@ -1,2 +1,3 @@
 data/sprawdz.py
 __pycache__/
+*.bak-*

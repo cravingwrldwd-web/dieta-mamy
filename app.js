@@ -7,14 +7,16 @@ const KEY = 'dietaMamy.v1';
 
 /* ---------- stan ---------- */
 const nowy = () => ({ v: 1, profil: null, dieta: 'standard', posilki: 4, wyklucz: [], plan: {}, zjedz: {}, extra: {},
-  zakupy: { zakres: 1, ok: {} }, waga: [], celWagi: null, ulub: [], duze: false, motyw: 'auto' });
+  zakupy: { zakres: 1, ok: {} }, waga: [], celWagi: null, ulub: [], duze: false, motyw: 'auto', pokazano: {}, wizyty: 0 });
 function wczytaj() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) return Object.assign(nowy(), s); } catch (e) {}
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) { const n = Object.assign(nowy(), s); n.pokazano = n.pokazano || {}; return n; } } catch (e) {}
   return nowy();
 }
 let S = wczytaj();
 function zapisz() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
-const U = { tab: 'plan', dzien: null, q: '', fm: '', ff: '', krok: 0, szkic: {}, sheet: null, kasuj: false, wq: '' };
+/* U = stan ekranu (nie zapisywany). stos = otwarte arkusze, pomin = ile zdarzeń „wstecz” wywołała sama aplikacja */
+const U = { tab: 'plan', dzien: null, q: '', fm: '', ff: '', krok: 0, szkic: {}, bledy: {}, stos: [], kasuj: false, wq: '', wz: '3m', gk: 0,
+  anim: {}, pomin: 0, wjazd: null, koszyk: false };
 
 /* ---------- daty ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -27,11 +29,15 @@ const DNI = ['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'];
 const DNI_P = ['Niedziela', 'Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota'];
 const MIES = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'];
 const opisDnia = s => { const d = zIso(s); return `${DNI_P[d.getDay()]}, ${d.getDate()} ${MIES[d.getMonth()]}`; };
+const dataSlownie = s => { const d = zIso(s); return `${d.getDate()} ${MIES[d.getMonth()]}`; };
 const krotko = s => { const d = zIso(s); return `${d.getDate()}.${pad(d.getMonth() + 1)}`; };
 
 /* ---------- liczby ---------- */
 const fN = (n, p = 1) => (Math.round(n * 10 ** p) / 10 ** p).toString().replace('.', ',');
+const fK = n => Math.round(n).toLocaleString('pl-PL');
+const odm = (n, a, b, c) => n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const bezTagow = s => s.replace(/<[^>]+>/g, '');
 function wartosci(ing) {
   let k = 0, b = 0, t = 0, w = 0;
   for (const [key, g] of ing) { const f = F[key]; if (!f) continue; k += f.k * g / 100; b += f.b * g / 100; t += f.t * g / 100; w += f.w * g / 100; }
@@ -60,11 +66,11 @@ const DIETY = {
   lowcarb: { n: 'Mniej węglowodanów', o: 'Mniej pieczywa i kasz, więcej warzyw', tag: 'lowcarb', m: [25, 45, 30] },
   fit: { n: 'Więcej białka', o: 'Syci na dłużej i chroni mięśnie', tag: 'fit', m: [30, 30, 40] },
   tania: { n: 'Oszczędna', o: 'Proste i niedrogie składniki', tag: 'tania', m: [18, 30, 52] } };
+const DIK = { standard: 'talerz', srodz: 'ryba', wege: 'lisc', lowcarb: 'chleb', fit: 'hantel', tania: 'moneta' };
 const SLOTY = {
   3: [['sniadanie', 'Śniadanie', '8:00', .30], ['obiad', 'Obiad', '13:30', .45], ['kolacja', 'Kolacja', '19:00', .25]],
   4: [['sniadanie', 'Śniadanie', '8:00', .27], ['drugie', 'II śniadanie', '11:00', .13], ['obiad', 'Obiad', '14:00', .35], ['kolacja', 'Kolacja', '18:30', .25]],
   5: [['sniadanie', 'Śniadanie', '7:30', .25], ['drugie', 'II śniadanie', '10:30', .10], ['obiad', 'Obiad', '13:30', .33], ['podw', 'Podwieczorek', '16:30', .10], ['kolacja', 'Kolacja', '19:00', .22]] };
-const TYPY = { sniadanie: 'Śniadania', drugie: 'II śniadania i przekąski', obiad: 'Obiady', kolacja: 'Kolacje' };
 const KROT = { sniadanie: 'Śniadanie', drugie: 'Przekąska', obiad: 'Obiad', kolacja: 'Kolacja' };
 const typ = s => s === 'podw' ? 'drugie' : s;
 const sloty = () => SLOTY[S.posilki] || SLOTY[4];
@@ -130,17 +136,48 @@ const I = {
   przepisy: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19M9 7.5h6"/>',
   zakupy: '<path d="M3.5 9h17l-1.8 10.2a1.5 1.5 0 0 1-1.5 1.3H6.8a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M8 9l4-5.5L16 9M9.5 13v4M14.5 13v4"/>',
   waga: '<path d="M4 20h16"/><path d="M5 15.5l4.5-5 3.5 3 6-7"/><path d="M15.5 6.5H19V10"/>',
-  ust: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/>',
+  zebatka: '<path d="M10.3 4.3c.4-1.8 3-1.8 3.4 0a1.7 1.7 0 0 0 2.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1 2.5c1.8.4 1.8 3 0 3.4a1.7 1.7 0 0 0-1 2.6c.9 1.5-.9 3.3-2.4 2.4a1.7 1.7 0 0 0-2.6 1c-.4 1.8-3 1.8-3.4 0a1.7 1.7 0 0 0-2.6-1c-1.5.9-3.3-.9-2.4-2.4a1.7 1.7 0 0 0-1-2.6c-1.8-.4-1.8-3 0-3.4a1.7 1.7 0 0 0 1-2.5c-.9-1.6.9-3.3 2.4-2.4 1 .6 2.3.1 2.6-1.1z"/><circle cx="12" cy="12" r="3"/>',
   ok: '<path d="M5 12.5l4.5 4.5L19 7"/>', swap: '<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',
   lewo: '<path d="M15 5l-7 7 7 7"/>', prawo: '<path d="M9 5l7 7-7 7"/>', szukaj: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
   serce: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>', zegar: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>' };
-const ik = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+  sniadanie: '<path d="M4 10h12v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H15.5M8 3.5c0 1.5 1 1.5 1 3M12 3.5c0 1.5 1 1.5 1 3"/>',
+  drugie: '<path d="M12 7.5c-2-1.8-7-1.2-7 4.2 0 4.3 3 8.3 5.2 8.3.8 0 1.2-.4 1.8-.4s1 .4 1.8.4c2.2 0 5.2-4 5.2-8.3 0-5.4-5-6-7-4.2z"/><path d="M12 7.5c0-2 1-3.5 3-4"/>',
+  obiad: '<path d="M3.5 11h17a8.5 8.5 0 0 1-17 0z"/><path d="M9 7c0-1.2 1-1.2 1-2.5M14 7c0-1.2 1-1.2 1-2.5"/>',
+  podw: '<circle cx="12" cy="12" r="8.5"/><circle cx="9" cy="10" r=".8"/><circle cx="14.5" cy="9" r=".8"/><circle cx="13" cy="14.5" r=".8"/><circle cx="8.5" cy="14" r=".8"/>',
+  kolacja: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', zegar: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  kosz: '<path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  udost: '<path d="M12 3.5v11M7.5 8L12 3.5 16.5 8"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
+  garnek: '<path d="M4 10h16v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M2 10h2M20 10h2M9 6.5c0-1 1-1 1-2.5M14 6.5c0-1 1-1 1-2.5"/>',
+  zarowka: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  telefon: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+  osoba: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
+  zakaz: '<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>',
+  oko: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  pobierz: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/>',
+  talerz: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/>',
+  ryba: '<path d="M3 12c3-4.2 6.8-6 10.5-6 3 0 5.5 2.4 7.5 6-2 3.6-4.5 6-7.5 6C9.8 18 6 16.2 3 12z"/><path d="M3 12L1.5 8.5M3 12l-1.5 3.5"/><circle cx="16" cy="11" r=".9"/>',
+  lisc: '<path d="M5 19c0-8 5-14 14-14 0 9-6 14-14 14z"/><path d="M5 19l7-7"/>',
+  chleb: '<path d="M5 11a3.5 3.5 0 0 1 1.5-6.5h11A3.5 3.5 0 0 1 19 11v8.5H5z"/><path d="M12 9v6M9.5 12.5L12 15l2.5-2.5"/>',
+  hantel: '<path d="M6.5 7.5v9M17.5 7.5v9M3.5 10v4M20.5 10v4M6.5 12h11"/>',
+  moneta: '<circle cx="12" cy="12" r="8.5"/><path d="M14.5 9.5c-.4-.9-1.3-1.5-2.5-1.5-1.4 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.8 2.5 2-1.1 2-2.5 2c-1.2 0-2.1-.6-2.5-1.5M12 6.5V8M12 16v1.5"/>' };
+const ik = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${I[n] || ''}</svg>`;
 const KOL = { warzywa: ['#7fb069', '#a7c957', '#e07a5f', '#5e8c4a'], owoce: ['#e85d75', '#f2a541', '#c44569'], nabial: ['#f1e4c3', '#e9d8a6'],
   mieso: ['#b5651d', '#9c4f2e', '#c97c4a'], ryby: ['#f08a5d', '#f4a07a'], zboza: ['#e1b866', '#d9a441', '#caa165'], straczki: ['#c9a227', '#8d6b2f', '#b5835a'],
   tluszcze: ['#c8b26b', '#a68a4b'], spizarnia: ['#c0392b', '#d35400'], przyprawy: ['#6a994e'] };
+/* zdjęcie dania nad ilustracją-zastępstwem: gdy pliku brak, zostaje narysowany talerz */
 function talerz(r, duzy) {
-  if (!r) return `<div class="plate${duzy ? ' lg' : ''}"></div>`;
+  const t = talerzRys(r, duzy);
+  if (!r) return t;
+  return t.replace('</div></div>', `</div><img class="foto" src="img/dania/${duzy ? 'd' : 'm'}/${r.id}.webp" alt="" loading="lazy" decoding="async" onload="this.classList.add('ok')" onerror="this.remove()"></div>`);
+}
+function ikonaSkl(k) {
+  const f = F[k]; const kol = (KOL[f && f.cat] || ['#9cb2a3'])[0];
+  const lit = ((f && f.n) || k).charAt(0).toUpperCase();
+  return `<span class="iks" style="background:${kol}33"><b style="color:${kol}">${lit}</b><img src="img/skladniki/${k}.webp" alt="" loading="lazy" onload="this.previousSibling.remove();this.classList.add('ok')" onerror="this.remove()"></span>`;
+}
+function talerzRys(r, duzy) {
+  if (!r) return `<div class="plate${duzy ? ' lg' : ''}"><div class="dish"></div></div>`;
   const h = [...r.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
   const ing = r.ing.filter(([k]) => F[k] && F[k].cat !== 'przyprawy').sort((a, b) => b[1] - a[1]).slice(0, 4);
   const poz = [[46, 52, 40], [64, 38, 28], [62, 64, 26], [36, 34, 20]];
@@ -151,79 +188,116 @@ function talerz(r, duzy) {
   }).join('');
   return `<div class="plate${duzy ? ' lg' : ''}"><div class="dish">${kropki}</div></div>`;
 }
+/* płynne przejście liczb: element startuje od poprzedniej wartości, po narysowaniu dostaje nową */
+const anim = (key, css, js, val, od) => `data-a="${key}" data-to="${js}|${val}" style="${css}:${U.anim[key] ?? od}"`;
+function animuj(root) {
+  const el = root.querySelectorAll('[data-a]'); if (!el.length) return;
+  void root.offsetWidth;
+  el.forEach(e => { const [p, v] = e.dataset.to.split('|'); e.style[p] = v; U.anim[e.dataset.a] = v; });
+}
+const samodzielna = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let instPrompt = null;
 
 /* ---------- widoki ---------- */
 function widok() {
   document.documentElement.classList.toggle('duze', !!S.duze);
   if (S.motyw === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', S.motyw);
   const app = document.getElementById('app');
+  const chipsX = [...app.querySelectorAll('.chips')].map(c => c.scrollLeft);
   if (!R.length) { app.innerHTML = `<div class="wrap empty"><h2>Brak przepisów</h2><p>Nie udało się wczytać bazy przepisów. Odśwież stronę.</p></div>`; return; }
   if (!S.profil) { app.innerHTML = powitanie(); return; }
   const t = { plan: ekranPlan, przepisy: ekranPrzepisy, zakupy: ekranZakupy, waga: ekranWaga }[U.tab] || ekranPlan;
   app.innerHTML = t() + nawigacja();
+  app.querySelectorAll('.chips').forEach((c, i) => { if (chipsX[i]) c.scrollLeft = chipsX[i]; });
+  U.wjazd = null;
+  animuj(app); gotoweFoto(app);
 }
+function gotoweFoto(root) { root.querySelectorAll('img.foto:not(.ok),.iks img:not(.ok)').forEach(i => { if (i.complete && i.naturalWidth) i.classList.add('ok'); }); }
+const brzek = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
+function wejscie() { const a = document.getElementById('app'); a.classList.remove('wej'); void a.offsetWidth; a.classList.add('wej'); }
 function nawigacja() {
   const z = [['plan', 'Plan'], ['przepisy', 'Przepisy'], ['zakupy', 'Zakupy'], ['waga', 'Waga']];
-  return `<nav class="nav"><div class="in">${z.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="${U.tab === k ? 'on' : ''}" aria-current="${U.tab === k}"><span class="pill">${ik(k)}</span>${n}</button>`).join('')}</div></nav>`;
+  const ile = doKupienia();
+  return `<nav class="nav" aria-label="Główne ekrany"><div class="in">${z.map(([k, n]) => `<button data-act="tab" data-v="${k}" class="${U.tab === k ? 'on' : ''}"${U.tab === k ? ' aria-current="page"' : ''}><span class="pill">${ik(k)}${k === 'zakupy' && ile ? `<em class="badge" aria-label="${ile} do kupienia">${ile}</em>` : ''}</span>${n}</button>`).join('')}</div></nav>`;
 }
-function naglowek(maly, duzy, gear = true) {
-  return `<div class="wrap hd"><div><div class="hi">${maly}</div><h1>${duzy}</h1></div>${gear ? `<button class="ico-btn" data-act="ustawienia" aria-label="Ustawienia">${ik('ust')}</button>` : ''}</div>`;
+function naglowek(maly, duzy, extra = '') {
+  return `<header class="wrap hd"><div class="hd-l"><div class="hi">${maly}</div><h1>${duzy}</h1></div><div class="hd-r">${extra}<button class="ico-btn lab" data-act="ustawienia" aria-label="Ustawienia">${ik('zebatka')}<span>Ustawienia</span></button></div></header>`;
+}
+const pusty = (ikona, tytul, tekst, przycisk = '') => `<div class="empty">${ik(ikona)}<b>${tytul}</b><p>${tekst}</p>${przycisk}</div>`;
+
+function instal() {
+  if (S.pokazano.inst || (S.wizyty || 0) < 2 || samodzielna()) return '';
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const jak = instPrompt ? 'Jednym dotknięciem. Będzie działać jak zwykła aplikacja, także bez internetu.'
+    : ios ? 'W Safari dotknij <b>Udostępnij</b> (kwadrat ze strzałką w górę), potem <b>Do ekranu początkowego</b>.'
+      : 'W przeglądarce dotknij <b>⋮</b> w prawym górnym rogu, potem <b>Dodaj do ekranu głównego</b>.';
+  return `<div class="card hint"><span class="hint-ik">${ik('telefon')}</span><div><b>Dodaj na ekran telefonu</b><p>${jak}</p><div class="row">${instPrompt ? `<button class="btn" data-act="instaluj">Zainstaluj</button>` : ''}<button class="btn sec" data-act="pokazano" data-v="inst">${instPrompt ? 'Później' : 'Rozumiem'}</button></div></div></div>`;
 }
 
 function ekranPlan() {
   const d = U.dzien || (U.dzien = dzis()), t = dzis();
-  const pn = poniedzialek(d);
-  const godz = new Date().getHours();
-  const imie = S.profil.imie ? `, ${esc(S.profil.imie)}` : '';
-  const powit = d === t ? (godz < 12 ? `Dzień dobry${imie}` : godz < 18 ? `Miłego popołudnia${imie}` : `Dobry wieczór${imie}`) : opisDnia(d);
-  const tyt = d === t ? 'Twój plan na dziś' : d === plus(t, 1) ? 'Plan na jutro' : d === plus(t, -1) ? 'Wczoraj' : 'Plan dnia';
+  const pn = poniedzialek(d), nd = plus(pn, 6);
+  const godz = new Date().getHours(), imie = S.profil.imie ? `, ${esc(S.profil.imie)}` : '';
+  const maly = d === t ? `${godz < 12 ? 'Dzień dobry' : godz < 18 ? 'Miłego dnia' : 'Dobry wieczór'}${imie} · ${dataSlownie(d)}` : opisDnia(d);
+  const tyt = d === t ? 'Dziś' : d === plus(t, 1) ? 'Jutro' : d === plus(t, -1) ? 'Wczoraj' : DNI_P[zIso(d).getDay()];
+  const a = zIso(pn), b = zIso(nd);
+  const tydz = `${a.getDate()}${a.getMonth() !== b.getMonth() ? ' ' + MIES[a.getMonth()] : ''} – ${b.getDate()} ${MIES[b.getMonth()]}`;
   const dni = [...Array(7)].map((_, i) => { const x = plus(pn, i), dd = zIso(x);
-    return `<button class="day${x === d ? ' on' : ''}${x === t ? ' dzis' : ''}" data-act="dzien" data-v="${x}" aria-label="${opisDnia(x)}">${DNI[dd.getDay()]}<b>${dd.getDate()}</b></button>`; }).join('');
+    return `<button class="day${x === d ? ' on' : ''}${x === t ? ' dzis' : ''}" data-act="dzien" data-v="${x}" aria-label="${opisDnia(x)}"${x === d ? ' aria-current="date"' : ''}>${DNI[dd.getDay()]}<b>${dd.getDate()}</b></button>`; }).join('');
   const cel = kcalCel(), z = zjedzoneDnia(d), m = DIETY[S.dieta].m;
   const cB = cel * m[0] / 400, cT = cel * m[1] / 900, cW = cel * m[2] / 400;
-  const proc = Math.min(100, z.k / cel * 100), za = z.k > cel * 1.05;
-  const pasek = (n, a, c, kol) => `<div><div class="lab">${n}<span>${Math.round(a)} / ${Math.round(c)} g</span></div><div class="bar"><i style="width:${Math.min(100, a / c * 100)}%;background:${kol}"></i></div></div>`;
+  const zost = cel - z.k, za = z.k > cel * 1.05, C = 301.6, off = (C * (1 - Math.min(1, z.k / cel))).toFixed(1);
+  const pasek = (n, val, c, cls) => `<div><div class="lab">${n}<span>${Math.round(val)} / ${Math.round(c)} g</span></div><div class="bar"><i class="${cls}" ${anim('p' + cls, 'width', 'width', Math.min(100, val / c * 100).toFixed(1) + '%', '0%')}></i></div></div>`;
   const zj = S.zjedz[d] || {};
+  let wszystkie = true;
   const karty = sloty().map(([s, nazwa, h]) => {
     const p = posilekDnia(d, s);
-    if (!p) return `<div class="card meal"><div class="plate"></div><div class="info"><div class="mt">${nazwa}</div><div class="mn">Brak pasującego przepisu</div><div class="mk">Zmień wykluczenia w ustawieniach</div></div></div>`;
-    const on = !!zj[s];
-    return `<div class="card meal-row"><button class="meal${on ? ' zjedz' : ''}" data-act="przepis" data-v="${p.r.id}" data-s="${s}" data-d="${d}">${talerz(p.r)}<div class="info"><div class="mt">${nazwa} · ${h}</div><div class="mn">${esc(p.r.n)}</div><div class="mk">${Math.round(p.w.k)} kcal · ${p.r.t} min</div></div></button><button class="ck${on ? ' on' : ''}" style="margin-right:12px" data-act="zjedz" data-s="${s}" aria-label="${on ? 'Odznacz' : 'Zjedzone'}: ${esc(p.r.n)}" aria-pressed="${on}">${ik('ok')}</button></div>`;
+    if (!p) { wszystkie = false; return `<div class="card meal-row"><div class="meal">${talerz(null)}<div class="info"><div class="mt">${ik(s)}${nazwa}</div><div class="mn">Brak pasującego przepisu</div><button class="swap" data-act="ustawienia" data-v="wyk">${ik('zakaz')}Zmień „Czego nie jem”</button></div></div></div>`; }
+    const on = !!zj[s]; if (!on) wszystkie = false;
+    return `<div class="card meal-row${on ? ' zjedz' : ''}"><div class="meal" role="button" tabindex="0" data-act="przepis" data-v="${p.r.id}" data-s="${s}" data-d="${d}">${talerz(p.r)}<div class="info"><div class="mt">${ik(s)}${nazwa} · ${h}</div><div class="mn">${esc(p.r.n)}</div><div class="mk">${on ? `<span class="zj">${ik('ok')}Zjedzone</span> · ` : ''}${Math.round(p.w.k)} kcal · ${p.r.t} min</div>${on ? '' : `<button class="swap" data-act="wymien" data-d="${d}" data-s="${s}">${ik('swap')}Wymień</button>`}</div></div><button class="ck${on ? ' on' : ''}" data-act="zjedz" data-d="${d}" data-s="${s}" aria-label="${on ? 'Odznacz' : 'Zjedzone'}: ${esc(p.r.n)}" aria-pressed="${on}"><span>${ik('ok')}</span></button></div>`;
   }).join('');
-  const ex = (S.extra[d] || []).map((e, i) => `<div class="card extra"><span>${esc(e.n)} · ${e.k} kcal</span><button data-act="extra-usun" data-i="${i}">Usuń</button></div>`).join('');
-  return naglowek(powit, tyt) + `<div class="wrap">
-  <div class="week"><button class="arr" data-act="tydzien" data-v="-7" aria-label="Poprzedni tydzień">${ik('lewo')}</button><div class="days">${dni}</div><button class="arr" data-act="tydzien" data-v="7" aria-label="Następny tydzień">${ik('prawo')}</button></div>
+  const ex = (S.extra[d] || []).map((e, i) => `<div class="card extra"><span class="ex-ik">${ik('plus')}</span><span class="ex-n">${esc(e.n)}<small>${e.k} kcal · spoza planu</small></span><button class="ico44" data-act="extra-usun" data-i="${i}" aria-label="Usuń: ${esc(e.n)}">${ik('kosz')}</button></div>`).join('');
+  const koniec = wszystkie ? `<div class="card done"><span>${ik('ok')}</span><div><b>Dzień zaliczony</b>${fK(z.k)} z ${fK(cel)} kcal</div></div>` : '';
+  const wsk = S.pokazano.wsk ? '' : `<div class="card hint"><span class="hint-ik">${ik('zarowka')}</span><div><b>Jak to działa</b><p>Dotknij posiłku, a zobaczysz przepis i składniki. Kółko po prawej odhacza, że już zjedzone.</p><button class="btn sec" data-act="pokazano" data-v="wsk">Rozumiem</button></div></div>`;
+  return naglowek(maly, tyt, d !== t ? `<button class="chip-dzis" data-act="dzien" data-v="${t}">Dziś</button>` : '') + `<div class="wrap">${instal()}
+  <div class="week"><button class="arr" data-act="tydzien" data-v="-7" aria-label="Poprzedni tydzień">${ik('lewo')}</button><span class="wk">${tydz}</span><button class="arr" data-act="tydzien" data-v="7" aria-label="Następny tydzień">${ik('prawo')}</button></div>
+  <div class="days">${dni}</div>
   <div class="card sum">
-    <div class="ring" style="background:conic-gradient(${za ? 'var(--red)' : 'var(--green)'} 0 ${proc}%,var(--soft) 0)"><div class="in"><div><b>${Math.round(z.k)}</b><small>z ${cel} kcal</small></div></div></div>
-    <div class="bars">${pasek('Białko', z.b, cB, 'var(--green2)')}${pasek('Tłuszcze', z.t, cT, 'var(--gold)')}${pasek('Węglowodany', z.w, cW, 'var(--sky)')}</div>
+    <div class="ring${za ? ' za' : ''}${z.k <= 0 ? ' zero' : ''}"><svg viewBox="0 0 112 112" aria-hidden="true"><circle class="tr" cx="56" cy="56" r="48"/><circle class="pr" cx="56" cy="56" r="48" stroke-dasharray="${C}" ${anim('ring', 'stroke-dashoffset', 'strokeDashoffset', off, C)}/></svg>
+      <div class="in">${za ? `<small>ponad plan</small><b>+${fK(-zost)}</b>` : `<small>zostało</small><b>${fK(Math.max(0, zost))}</b>`}<small>kcal</small></div></div>
+    <div class="bars"><div class="lab0">Zjedzone <b>${fK(z.k)}</b> z ${fK(cel)} kcal</div>${pasek('Białko', z.b, cB, 'bB')}${pasek('Tłuszcze', z.t, cT, 'bT')}${pasek('Węglowodany', z.w, cW, 'bW')}</div>
   </div>
-  <div class="meals">${karty}${ex}</div>
-  <div class="row" style="margin-top:12px"><button class="btn ghost" data-act="extra-dodaj">${ik('plus')}Zjadłam coś spoza planu</button></div>
-  <p class="note" style="margin-top:14px">Dotknij posiłku, żeby zobaczyć przepis i składniki. Kółko po prawej odhacza zjedzone.</p>
-  </div>`;
+  ${wsk}
+  <div class="meals${U.wjazd ? ' ' + U.wjazd : ''}" id="posilki">${karty}${ex}${koniec}</div>
+  <button class="btn sec" style="margin-top:12px" data-act="extra-dodaj">${ik('plus')}Zjadłam coś spoza planu</button>
+  <p class="note center">Przesuń palcem po posiłkach w bok, żeby zmienić dzień.</p></div>`;
 }
 
 function ekranPrzepisy() {
-  const q = U.q.trim().toLowerCase();
-  const fm = U.fm, ff = U.ff;
-  let lista = R.filter(r => {
+  const q = U.q.trim().toLowerCase(), fm = U.fm, ff = U.ff;
+  const wyk = new Set(S.wyklucz);
+  const lista = R.filter(r => {
     if (fm && !r.m.includes(fm)) return false;
     if (ff === 'ulub' && !S.ulub.includes(r.id)) return false;
     if (ff === 'szybkie' && r.t > 15) return false;
     if (ff && !['ulub', 'szybkie'].includes(ff) && !(r.d || []).includes(ff)) return false;
     if (q && !(r.n.toLowerCase().includes(q) || r.ing.some(([k]) => F[k] && F[k].n.toLowerCase().includes(q)))) return false;
-    return true;
+    return !r.ing.some(([k]) => wyk.has(k));
   });
-  const wyk = new Set(S.wyklucz); lista = lista.filter(r => !r.ing.some(([k]) => wyk.has(k)));
   const chM = [['', 'Wszystkie'], ['sniadanie', 'Śniadania'], ['drugie', 'II śniadania'], ['obiad', 'Obiady'], ['kolacja', 'Kolacje']];
   const chF = [['ulub', 'Ulubione'], ['szybkie', 'Do 15 minut'], ['wege', 'Bez mięsa'], ['lowcarb', 'Mniej węgli'], ['fit', 'Więcej białka'], ['srodz', 'Śródziemnomorskie'], ['tania', 'Tanie']];
   const karty = lista.map(r => { const w = bazowe(r), ul = S.ulub.includes(r.id);
-    return `<div class="card" style="display:flex;align-items:center"><button class="rcard" data-act="przepis" data-v="${r.id}">${talerz(r)}<div class="info" style="flex:1;min-width:0"><div class="mt">${r.m.map(m => KROT[m] || '').join(' · ')}</div><div class="mn">${esc(r.n)}</div><div class="mk">${Math.round(w.k)} kcal · ${r.t} min</div></div></button><button class="heart${ul ? ' on' : ''}" data-act="ulub" data-v="${r.id}" aria-label="${ul ? 'Usuń z ulubionych' : 'Dodaj do ulubionych'}" aria-pressed="${ul}">${ik('serce')}</button></div>`; }).join('');
+    return `<div class="card rrow"><div class="rcard" role="button" tabindex="0" data-act="przepis" data-v="${r.id}">${talerz(r)}<div class="info"><div class="mt">${r.m.map(x => KROT[x] || '').join(' · ')}</div><div class="mn">${esc(r.n)}</div><div class="mk">${Math.round(w.k)} kcal · ${r.t} min</div></div></div><button class="heart${ul ? ' on' : ''}" data-act="ulub" data-v="${r.id}" aria-label="${ul ? 'Usuń z ulubionych' : 'Dodaj do ulubionych'}" aria-pressed="${ul}">${ik('serce')}</button></div>`; }).join('');
+  const aktywny = !!(fm || ff || q);
+  const brak = pusty('szukaj', 'Nie ma takiego przepisu', 'Spróbuj innego słowa albo wyczyść filtry.',
+    `<button class="btn sec" data-act="filtry-czysc">Wyczyść filtry</button><div class="chips podp">${['ryba', 'zupa', 'jajka', 'kasza'].map(s => `<button class="chip" data-act="szukaj-podp" data-v="${s}">${s}</button>`).join('')}</div>`);
   return naglowek(`${R.length} przepisów`, 'Przepisy') + `<div class="wrap">
-  <div class="search">${ik('szukaj')}<input class="inp" id="szukaj" type="search" placeholder="Szukaj: łosoś, kasza, jajka…" value="${esc(U.q)}" autocomplete="off"></div>
-  <div class="chips">${chM.map(([k, n]) => `<button class="chip${fm === k ? ' on' : ''}" data-act="fm" data-v="${k}">${n}</button>`).join('')}</div>
-  <div class="chips" style="margin-top:6px">${chF.map(([k, n]) => `<button class="chip${ff === k ? ' on' : ''}" data-act="ff" data-v="${k}">${n}</button>`).join('')}</div>
-  <div class="rlist" id="rlist">${karty || '<div class="empty">Nic nie pasuje. Zmień filtr albo wpisz inne słowo.</div>'}</div>
+  <div class="search">${ik('szukaj')}<input class="inp" id="szukaj" type="search" placeholder="Szukaj: łosoś, kasza, jajka…" value="${esc(U.q)}" autocomplete="off" enterkeyhint="search">${U.q ? `<button class="sx" data-act="szukaj-czysc" aria-label="Wyczyść szukanie">${ik('x')}</button>` : ''}</div>
+  <div class="chips">${chM.map(([k, n]) => `<button class="chip${fm === k ? ' on' : ''}" data-act="fm" data-v="${k}" aria-pressed="${fm === k}">${n}</button>`).join('')}</div>
+  <div class="grp">Dla Ciebie</div>
+  <div class="chips">${chF.map(([k, n]) => `<button class="chip${ff === k ? ' on' : ''}" data-act="ff" data-v="${k}" aria-pressed="${ff === k}">${n}${ff === k ? ik('x') : ''}</button>`).join('')}</div>
+  <div class="cnt"><span>${lista.length} ${odm(lista.length, 'przepis', 'przepisy', 'przepisów')}</span>${aktywny ? `<button class="lnk" data-act="filtry-czysc">Wyczyść filtry</button>` : ''}</div>
+  <div class="rlist" id="rlist">${karty || brak}</div>
   <p class="note" style="margin-top:12px">Kalorie podane na jedną porcję podstawową. W planie porcje same dopasowują się do Twojego zapotrzebowania.</p></div>`;
 }
 
@@ -234,22 +308,29 @@ function listaZakupow() {
   for (let i = 0; i < ile; i++) { const d = plus(od, i); for (const [s] of sloty()) { const p = posilekDnia(d, s); if (!p) continue; for (const [k, g] of p.ing) suma[k] = (suma[k] || 0) + g; } }
   return { suma, od, ile };
 }
+const gZak = (suma, k) => Math.round(suma[k] / (suma[k] >= 50 ? 5 : 1)) * (suma[k] >= 50 ? 5 : 1);
+function doKupienia() { const { suma } = listaZakupow(); return Object.keys(suma).filter(k => F[k] && F[k].cat !== 'przyprawy' && !S.zakupy.ok[k]).length; }
 function ekranZakupy() {
   const { suma, od, ile } = listaZakupow();
   const ok = S.zakupy.ok, z = S.zakupy.zakres || 1;
   const klucze = Object.keys(suma).filter(k => F[k]);
-  const zost = klucze.filter(k => !ok[k] && F[k].cat !== 'przyprawy').length;
+  const doKup = klucze.filter(k => F[k].cat !== 'przyprawy'), zost = doKup.filter(k => !ok[k]).length;
+  const alfa = (a, b) => F[a].n.localeCompare(F[b].n, 'pl');
+  const wiersz = k => `<li class="${ok[k] ? 'on' : ''}" data-act="kup" data-v="${k}" role="checkbox" aria-checked="${!!ok[k]}" tabindex="0"><span class="bx">${ik('ok')}</span>${ikonaSkl(k)}<span class="nm">${esc(F[k].n)}</span><span class="ilosc">${ilosc(k, gZak(suma, k), true)}</span></li>`;
   const grupy = KAT.map(([c, nazwa]) => {
-    const el = klucze.filter(k => F[k].cat === c).sort((a, b) => F[a].n.localeCompare(F[b].n, 'pl'));
-    if (!el.length) return '';
-    return `<h3>${nazwa}</h3><ul class="card ing shop">${el.map(k => `<li class="${ok[k] ? 'on' : ''}" data-act="kup" data-v="${k}" role="checkbox" aria-checked="${!!ok[k]}" tabindex="0"><span class="bx">${ik('ok')}</span><span class="nm">${esc(F[k].n)}</span><span class="ilosc">${ilosc(k, Math.round(suma[k] / (suma[k] >= 50 ? 5 : 1)) * (suma[k] >= 50 ? 5 : 1), true)}</span></li>`).join('')}</ul>`;
+    const el = klucze.filter(k => F[k].cat === c && !ok[k]).sort(alfa);
+    return el.length ? `<h3>${nazwa}</h3><ul class="card ing shop">${el.map(wiersz).join('')}</ul>` : '';
   }).join('');
+  const kupione = klucze.filter(k => ok[k]).sort(alfa);
+  const koszyk = kupione.length ? `<details class="koszyk"${U.koszyk ? ' open' : ''}><summary>${ik('ok')}W koszyku (${kupione.length})</summary><ul class="card ing shop">${kupione.map(wiersz).join('')}</ul><button class="btn sec" style="margin-top:10px" data-act="kup-czysc">Odznacz wszystko</button></details>` : '';
   const zakresTxt = ile === 1 ? opisDnia(od) : `${krotko(od)} – ${krotko(plus(od, ile - 1))}`;
-  return naglowek(zakresTxt, 'Lista zakupów') + `<div class="wrap">
-  <div class="seg" role="tablist">${[[1, 'Dziś'], [-1, 'Jutro'], [3, '3 dni'], [7, 'Tydzień']].map(([v, n]) => `<button class="${z === v ? 'on' : ''}" data-act="zakres" data-v="${v}">${n}</button>`).join('')}</div>
-  <p class="note" style="margin:12px 2px 0">${zost ? `Zostało do kupienia: <b>${zost}</b>. Dotknij produktu w sklepie, żeby go skreślić.` : 'Wszystko kupione.'}</p>
-  ${grupy || '<div class="empty">Plan jest pusty.</div>'}
-  <div style="margin-top:16px"><button class="btn sec" data-act="kup-czysc">Wyczyść skreślenia</button></div></div>`;
+  const proc = doKup.length ? ((doKup.length - zost) / doKup.length * 100).toFixed(1) + '%' : '0%';
+  const tresc = !klucze.length ? pusty('zakupy', 'Lista jest pusta', 'Najpierw zajrzyj do planu posiłków.', `<button class="btn" data-act="tab" data-v="plan">Przejdź do planu</button>`)
+    : `<div class="postep" role="status"><div>${zost ? `Zostało <b>${zost}</b> z ${doKup.length}` : `<b>Wszystko kupione</b>`}</div><div class="bar"><i ${anim('zak', 'width', 'width', proc, '0%')}></i></div></div>
+      ${grupy}${koszyk}<p class="note" style="margin-top:14px">Dotknij produktu w sklepie, a przejdzie do koszyka.</p>`;
+  return naglowek(zakresTxt, 'Lista zakupów', klucze.length ? `<button class="ico-btn lab" data-act="wyslij" aria-label="Wyślij listę">${ik('udost')}<span>Wyślij</span></button>` : '') + `<div class="wrap">
+  <div class="seg">${[[1, 'Dziś'], [-1, 'Jutro'], [3, '3 dni'], [7, 'Tydzień']].map(([v, n]) => `<button class="${z === v ? 'on' : ''}" data-act="zakres" data-v="${v}" aria-pressed="${z === v}">${n}</button>`).join('')}</div>
+  ${tresc}</div>`;
 }
 
 function ekranWaga() {
@@ -257,68 +338,77 @@ function ekranWaga() {
   const teraz = wagaTeraz(), start = w.length ? w[0].kg : p.waga, zm = teraz - start;
   const cel = S.celWagi, bmi = teraz / ((p.wzrost / 100) ** 2);
   const ost = w[w.length - 1], dzisW = ost && ost.d === dzis();
-  let wykres = '<div class="empty">Wpisuj wagę raz w tygodniu, rano na czczo. Po dwóch wpisach zobaczysz tu wykres.</div>';
-  if (w.length >= 2) {
-    const W = 340, H = 170, L = 34, Rr = 10, T = 12, B = 26;
-    const t0 = zIso(w[0].d).getTime(), t1 = Math.max(t0 + 864e5, zIso(w[w.length - 1].d).getTime());
-    const vals = w.map(x => x.kg).concat(cel ? [cel] : []);
-    let lo = Math.floor(Math.min(...vals) - 1), hi = Math.ceil(Math.max(...vals) + 1);
+  const odD = plus(dzis(), -({ m: 31, '3m': 92, all: 1e5 }[U.wz] || 92));
+  const ww = w.filter(x => x.d >= odD);
+  let wykres = pusty('waga', 'Tu będzie wykres', 'Wpisuj wagę raz w tygodniu, rano na czczo. Po dwóch wpisach zobaczysz linię.', `<button class="btn" data-act="waga-dodaj">${ik('plus')}Dodaj wagę</button>`);
+  if (ww.length >= 2) {
+    const W = 340, H = 180, L = 36, Rr = 12, T = 14, B = 28;
+    const t0 = zIso(ww[0].d).getTime(), t1 = Math.max(t0 + 864e5, zIso(ww[ww.length - 1].d).getTime());
+    const vals = ww.map(x => x.kg).concat(cel ? [cel] : []);
+    const lo = Math.floor(Math.min(...vals) - 1), hi = Math.ceil(Math.max(...vals) + 1);
     const X = t => L + (t - t0) / (t1 - t0) * (W - L - Rr), Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
-    const pts = w.map(x => [X(zIso(x.d).getTime()), Y(x.kg)]);
+    const pts = ww.map(x => [X(zIso(x.d).getTime()), Y(x.kg)]);
     const krok = Math.max(1, Math.ceil((hi - lo) / 4));
     let siatka = ''; for (let v = lo; v <= hi; v += krok) siatka += `<line x1="${L}" x2="${W - Rr}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
-    const linia = pts.map(p => p.join(',')).join(' ');
+    const linia = pts.map(q => q.join(',')).join(' ');
     const pole = `M${pts[0][0]},${H - B} L${linia.replace(/ /g, ' L')} L${pts[pts.length - 1][0]},${H - B} Z`;
     wykres = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Wykres wagi">${siatka}
       ${cel ? `<line x1="${L}" x2="${W - Rr}" y1="${Y(cel)}" y2="${Y(cel)}" stroke="var(--gold)" stroke-width="2" stroke-dasharray="5 5"/><text x="${W - Rr}" y="${Y(cel) - 6}" text-anchor="end">cel ${fN(cel)}</text>` : ''}
       <path d="${pole}" fill="var(--green)" fill-opacity=".12" stroke="none"/>
       <polyline points="${linia}" stroke="var(--green)" stroke-width="3" fill="none"/>
-      ${pts.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="${i === pts.length - 1 ? 5.5 : 3.5}" fill="${i === pts.length - 1 ? 'var(--green)' : 'var(--card)'}" stroke="var(--green)" stroke-width="2"/>`).join('')}
-      <text x="${L}" y="${H - 6}">${krotko(w[0].d)}</text><text x="${W - Rr}" y="${H - 6}" text-anchor="end">${krotko(w[w.length - 1].d)}</text></svg>`;
+      ${pts.map((q, i) => `<circle cx="${q[0]}" cy="${q[1]}" r="${i === pts.length - 1 ? 5.5 : 4}" fill="${i === pts.length - 1 ? 'var(--green)' : 'var(--card)'}" stroke="var(--green)" stroke-width="2"/><circle class="hit" cx="${q[0]}" cy="${q[1]}" r="16" data-act="punkt" data-v="${opisDnia(ww[i].d)} · ${fN(ww[i].kg)} kg"/>`).join('')}
+      <text x="${L}" y="${H - 6}">${krotko(ww[0].d)}</text><text x="${W - Rr}" y="${H - 6}" text-anchor="end">${krotko(ww[ww.length - 1].d)}</text></svg>
+      <p class="note center" style="margin:4px 0 0">Dotknij kropki, żeby zobaczyć wpis.</p>`;
   }
   const doCelu = cel ? teraz - cel : null;
   const lista = [...w].reverse().slice(0, 12).map((x, i, a) => { const prev = a[i + 1]; const r = prev ? x.kg - prev.kg : 0;
-    return `<li><span>${opisDnia(x.d)}</span><span>${fN(x.kg)} kg ${prev ? `<small style="color:${r <= 0 ? 'var(--green)' : 'var(--red)'}">${r > 0 ? '+' : ''}${fN(r)}</small>` : ''}</span></li>`; }).join('');
+    return `<li><span>${opisDnia(x.d)}</span><span class="wr">${fN(x.kg)} kg ${prev ? `<small style="color:${r <= 0 ? 'var(--green)' : 'var(--red)'}">${r > 0 ? '+' : ''}${fN(r)}</small>` : ''}<button class="ico44" data-act="waga-usun" data-v="${x.d}" aria-label="Usuń wpis z ${opisDnia(x.d)}">${ik('kosz')}</button></span></li>`; }).join('');
   return naglowek(`BMI ${fN(bmi)}`, 'Waga i postępy') + `<div class="wrap">
   <div class="stat3"><div><b>${fN(teraz)}</b>kg teraz</div><div><b style="color:${zm <= 0 ? 'var(--green)' : 'var(--red)'}">${zm > 0 ? '+' : ''}${fN(zm)}</b>kg od startu</div><div><b>${doCelu === null ? '–' : fN(Math.max(0, doCelu))}</b>${doCelu === null ? 'brak celu' : 'kg do celu'}</div></div>
-  <div class="card chart">${wykres}</div>
-  <h3>${dzisW ? 'Popraw dzisiejszy wpis' : 'Dzisiejsza waga'}</h3>
-  <div class="row"><input class="inp" id="nowa-waga" type="number" inputmode="decimal" step="0.1" min="30" max="300" placeholder="np. ${fN(teraz)}" aria-label="Waga w kilogramach"><button class="btn" style="flex:0 0 auto;width:auto;padding-inline:22px" data-act="waga-zapisz">Zapisz</button></div>
+  <button class="btn" data-act="waga-dodaj">${ik('plus')}${dzisW ? 'Popraw dzisiejszą wagę' : 'Dodaj dzisiejszą wagę'}</button>
+  ${w.length >= 2 ? `<div class="seg" style="margin-top:16px">${[['m', 'Miesiąc'], ['3m', '3 miesiące'], ['all', 'Wszystko']].map(([v, n]) => `<button class="${U.wz === v ? 'on' : ''}" data-act="wz" data-v="${v}" aria-pressed="${U.wz === v}">${n}</button>`).join('')}</div>` : ''}
+  <div class="card chart" style="margin-top:10px">${wykres}</div>
   <h3>Waga docelowa</h3>
-  <div class="row"><input class="inp" id="cel-wagi" type="number" inputmode="decimal" step="0.5" min="30" max="300" placeholder="np. ${fN(Math.round(teraz - 5))}" value="${cel || ''}" aria-label="Waga docelowa"><button class="btn sec" style="flex:0 0 auto;width:auto;padding-inline:22px" data-act="cel-zapisz">Ustaw</button></div>
+  <div class="row"><input class="inp" id="cel-wagi" type="text" inputmode="decimal" placeholder="np. ${fN(Math.round(teraz - 5))}" value="${cel ? fN(cel) : ''}" aria-label="Waga docelowa w kilogramach"><button class="btn sec auto" data-act="cel-zapisz">Ustaw</button></div>
   ${lista ? `<h3>Ostatnie wpisy</h3><ul class="card ing wlist">${lista}</ul>` : ''}
   <p class="note" style="margin-top:12px">Zdrowe tempo to 0,5–1 kg na tydzień. Waga skacze z dnia na dzień o 1–2 kg przez wodę, więc patrz na linię z kilku tygodni.</p></div>`;
 }
 
-/* ---------- powitanie ---------- */
+/* ---------- pierwsze uruchomienie: 4 kroki, jedno pytanie na ekran ---------- */
+const wybory = (lista, wyb, attrs, ikony) => lista.map(([v, n, o]) => `<button class="card alt wyb${wyb === v ? ' on' : ''}" ${attrs(v)} aria-pressed="${wyb === v}">${ikony ? `<span class="di">${ik(ikony[v])}</span>` : ''}<span class="info"><span class="mn">${n}</span><span class="mk">${o}</span></span><span class="okk">${ik('ok')}</span></button>`).join('');
+const dietyLista = () => Object.entries(DIETY).map(([v, d]) => [v, d.n, d.o]);
 function powitanie() {
-  const k = U.krok, s = U.szkic;
-  const kropki = `<div class="dots">${[0, 1, 2].map(i => `<i class="${i === k ? 'on' : ''}"></i>`).join('')}</div>`;
-  if (k === 0) return `<div class="wrap onb">${kropki}<div class="big">Twój plan jedzenia, ułożony pod Ciebie</div>
+  const k = U.krok, s = U.szkic, N = 4, bl = U.bledy || {};
+  const gora = `<div class="onb-top"><span>Krok ${k + 1} z ${N}</span><div class="bar"><i style="width:${(k + 1) / N * 100}%"></i></div></div>`;
+  const dol = (dalej, akcja = 'onb-dalej', nad = '') => `<div class="dol">${nad}<div class="row">${k ? `<button class="btn sec" data-act="onb-wstecz">${ik('lewo')}Wstecz</button>` : ''}<button class="btn" data-act="${akcja}">${dalej}</button></div></div>`;
+  const pole = (id, klucz, label, attrs, ph) => `<div class="field"><label for="${id}">${label}</label><input class="inp${bl[klucz] ? ' bad' : ''}" id="${id}" ${attrs} value="${esc(s[klucz] || '')}" placeholder="${ph}"${bl[klucz] ? ` aria-invalid="true" aria-describedby="${id}-b"` : ''}>${bl[klucz] ? `<div class="err" id="${id}-b">${bl[klucz]}</div>` : ''}</div>`;
+  if (k === 0) return `<div class="wrap onb">${gora}<div class="onb-foto">${talerz(RB.owsianka_jablko || R[0], true)}</div><div class="big">Twój plan jedzenia, ułożony pod Ciebie</div>
     <p class="lead">Codziennie gotowe posiłki z przepisami, lista zakupów do sklepu i wykres wagi. Wszystko zostaje w tym telefonie.</p>
-    <div class="field"><label for="o-imie">Jak masz na imię?</label><input class="inp" id="o-imie" value="${esc(s.imie || '')}" placeholder="np. Ewa" autocomplete="given-name"></div>
-    <button class="btn" data-act="onb-dalej">Dalej</button></div>`;
-  if (k === 1) return `<div class="wrap onb">${kropki}<div class="big">Kilka liczb o Tobie</div>
+    ${pole('o-imie', 'imie', 'Jak masz na imię?', 'autocomplete="given-name"', 'np. Anna')}
+    <div class="field"><label>Jak duże mają być litery?</label><div class="seg">${[[false, 'Normalne'], [true, 'Duże']].map(([v, n]) => `<button class="${!!S.duze === v ? 'on' : ''}" data-act="duze" data-v="${v}" aria-pressed="${!!S.duze === v}"><span class="aa${v ? ' duze' : ''}">Aa</span>${n}</button>`).join('')}</div></div>
+    ${dol(`Dalej${ik('prawo')}`)}</div>`;
+  if (k === 1) return `<div class="wrap onb">${gora}<div class="big">Kilka liczb o Tobie</div>
     <p class="lead">Z nich policzę, ile kalorii dziennie potrzebujesz.</p>
     <div class="field"><label>Płeć</label><div class="seg">${[['k', 'Kobieta'], ['m', 'Mężczyzna']].map(([v, n]) => `<button class="${(s.plec || 'k') === v ? 'on' : ''}" data-act="szkic" data-k="plec" data-v="${v}">${n}</button>`).join('')}</div></div>
-    <div class="grid2"><div class="field"><label for="o-wiek">Wiek</label><input class="inp" id="o-wiek" type="number" inputmode="numeric" value="${s.wiek || ''}" placeholder="lat"></div>
-    <div class="field"><label for="o-wzrost">Wzrost</label><input class="inp" id="o-wzrost" type="number" inputmode="numeric" value="${s.wzrost || ''}" placeholder="cm"></div></div>
-    <div class="field"><label for="o-waga">Waga teraz</label><input class="inp" id="o-waga" type="number" inputmode="decimal" step="0.1" value="${s.waga || ''}" placeholder="kg"></div>
-    <div class="field"><label>Ile ruchu na co dzień?</label>${AKT.map((a, i) => `<button class="card alt" style="${(s.akt ?? 1) === i ? 'outline:3px solid var(--green)' : ''}" data-act="szkic" data-k="akt" data-v="${i}"><div><div class="mn" style="margin:0">${a.n}</div><div class="mk">${a.o}</div></div></button>`).join('')}</div>
-    <p class="note" id="onb-blad" style="color:var(--red)"></p>
-    <div class="row"><button class="btn sec" data-act="onb-wstecz">Wstecz</button><button class="btn" data-act="onb-dalej">Dalej</button></div></div>`;
+    <div class="grid2">${pole('o-wiek', 'wiek', 'Wiek (lata)', 'type="text" inputmode="numeric"', 'np. 58')}${pole('o-wzrost', 'wzrost', 'Wzrost (cm)', 'type="text" inputmode="numeric"', 'np. 164')}</div>
+    ${pole('o-waga', 'waga', 'Waga teraz (kg)', 'type="text" inputmode="decimal"', 'np. 72,5')}
+    <div class="field"><label>Ile ruchu na co dzień?</label>${wybory(AKT.map((a, i) => [i, a.n, a.o]), s.akt ?? 1, v => `data-act="szkic" data-k="akt" data-v="${v}"`)}</div>
+    ${dol(`Dalej${ik('prawo')}`)}</div>`;
   const prof = profilZeSzkicu();
   const stare = S.profil; S.profil = prof; const kc = zapotrzebowanie(); S.profil = stare;
-  return `<div class="wrap onb">${kropki}<div class="big">Twój cel</div>
-    <div class="field"><div class="seg">${[['schudnac', 'Schudnąć'], ['utrzymac', 'Utrzymać'], ['przytyc', 'Przytyć']].map(([v, n]) => `<button class="${prof.cel === v ? 'on' : ''}" data-act="szkic" data-k="cel" data-v="${v}">${n}</button>`).join('')}</div></div>
-    ${prof.cel === 'schudnac' ? `<div class="field"><label>Jak szybko?</label><div class="seg">${[[.25, 'Łagodnie'], [.5, 'Zwykle'], [.75, 'Szybciej']].map(([v, n]) => `<button class="${prof.tempo === v ? 'on' : ''}" data-act="szkic" data-k="tempo" data-v="${v}">${n}<br><small>${fN(v, 2)} kg/tydz.</small></button>`).join('')}</div></div>` : ''}
-    <div class="field"><label>Rodzaj diety</label>${Object.entries(DIETY).map(([v, d]) => `<button class="card alt" style="${(s.dieta || 'standard') === v ? 'outline:3px solid var(--green)' : ''}" data-act="szkic" data-k="dieta" data-v="${v}"><div><div class="mn" style="margin:0">${d.n}</div><div class="mk">${d.o}</div></div></button>`).join('')}</div>
-    <div class="kcalbox"><b>${kc}</b>kcal dziennie</div>
-    <div class="row"><button class="btn sec" data-act="onb-wstecz">Wstecz</button><button class="btn" data-act="onb-koniec">Zaczynamy</button></div></div>`;
+  if (k === 2) return `<div class="wrap onb">${gora}<div class="big">Twój cel</div>
+    <p class="lead">Możesz go potem zmienić w ustawieniach.</p>
+    <div class="field">${wybory([['schudnac', 'Schudnąć', 'Plan z lekkim niedoborem kalorii'], ['utrzymac', 'Utrzymać wagę', 'Tyle, ile spalasz'], ['przytyc', 'Przytyć', 'Trochę więcej niż spalasz']], prof.cel, v => `data-act="szkic" data-k="cel" data-v="${v}"`)}</div>
+    ${prof.cel === 'schudnac' ? `<div class="field"><label>Jak szybko?</label><div class="seg">${[[.25, 'Łagodnie'], [.5, 'Zwykle'], [.75, 'Szybciej']].map(([v, n]) => `<button class="${prof.tempo === v ? 'on' : ''}" data-act="szkic" data-k="tempo" data-v="${v}">${n}<small>${fN(v, 2)} kg/tydz.</small></button>`).join('')}</div></div>` : ''}
+    ${dol(`Dalej${ik('prawo')}`)}</div>`;
+  return `<div class="wrap onb">${gora}<div class="big">Jak lubisz jeść?</div>
+    <p class="lead">Wybierz rodzaj diety. Przepisy dobiorę pod nią.</p>
+    <div class="field">${wybory(dietyLista(), s.dieta || 'standard', v => `data-act="szkic" data-k="dieta" data-v="${v}"`, DIK)}</div>
+    ${dol('Zaczynamy', 'onb-koniec', `<div class="kcal-mini">Twój plan: <b>${fK(kc)} kcal</b> dziennie</div>`)}</div>`;
 }
 function profilZeSzkicu() {
   const s = U.szkic;
-  return { imie: (s.imie || '').trim(), plec: s.plec || 'k', wiek: +s.wiek || 50, wzrost: +s.wzrost || 165, waga: +s.waga || 70,
+  return { imie: (s.imie || '').trim(), plec: s.plec || 'k', wiek: +s.wiek || 50, wzrost: +s.wzrost || 165, waga: +String(s.waga || '').replace(',', '.') || 70,
     akt: s.akt ?? 1, cel: s.cel || 'schudnac', tempo: s.tempo ?? .5, kcalWlasne: null };
 }
 function czytajPola() {
@@ -326,152 +416,269 @@ function czytajPola() {
   for (const [id, k] of [['o-imie', 'imie'], ['o-wiek', 'wiek'], ['o-wzrost', 'wzrost'], ['o-waga', 'waga']]) { const v = g(id); if (v !== undefined) U.szkic[k] = v; }
 }
 
-/* ---------- arkusze ---------- */
-function otworz(fn) { U.sheet = fn; odswiezArkusz(); const sh = document.getElementById('sheet'); sh.hidden = false; document.body.style.overflow = 'hidden'; }
-function odswiezArkusz() { if (U.sheet) document.getElementById('sheet-in').innerHTML = `<button class="sheet-x" data-act="zamknij" aria-label="Zamknij">${ik('x')}</button>` + U.sheet(); }
-function zamknij() { U.sheet = null; U.kasuj = false; document.getElementById('sheet').hidden = true; document.body.style.overflow = ''; }
+/* ---------- arkusze: stos z obsługą przycisku „wstecz” telefonu ---------- */
+let zegarZamk = null, blokada = null;
+function otworz(fn) {
+  U.stos.push(fn); history.pushState({ ark: U.stos.length }, '');
+  const sh = document.getElementById('sheet'); clearTimeout(zegarZamk);
+  sh.classList.remove('out'); sh.hidden = false; document.body.style.overflow = 'hidden';
+  odswiezArkusz(true);
+}
+function odswiezArkusz(odGory) {
+  const fn = U.stos[U.stos.length - 1]; if (!fn) return;
+  const box = document.querySelector('.sheet-box');
+  document.getElementById('sheet-in').innerHTML = `<button class="sheet-x" data-act="zamknij" aria-label="Zamknij">${ik('x')}</button>` + fn();
+  gotoweFoto(box);
+  if (odGory) box.scrollTop = 0;
+  ekranNieGasnie(!!fn.gotuj);
+}
+function schowajArkusz() {
+  const sh = document.getElementById('sheet'); U.kasuj = false; sh.classList.add('out'); document.body.style.overflow = '';
+  clearTimeout(zegarZamk); zegarZamk = setTimeout(() => { sh.hidden = true; sh.classList.remove('out'); document.querySelector('.sheet-box').style.transform = ''; }, 200);
+  ekranNieGasnie(false);
+}
+function cofnij(n) { if (n > 0) { U.pomin++; history.go(-n); } }
+function zamknij() { const n = U.stos.length; if (!n) return; U.stos = []; schowajArkusz(); cofnij(n); }
+/* zamyka wszystko i wraca na Plan jednym krokiem historii */
+function naPlan() { const n = U.stos.length + (U.tab !== 'plan' ? 1 : 0); if (U.stos.length) { U.stos = []; schowajArkusz(); } U.tab = 'plan'; cofnij(n); }
+const PRZEW = {};
+function pokazTab() { widok(); scrollTo(0, PRZEW[U.tab] || 0); wejscie(); const b = document.querySelector('.nav button.on'); if (b) b.classList.add('nowa'); }
+function ustawTab(v) {
+  if (v === U.tab) { scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  PRZEW[U.tab] = scrollY;
+  if (v === 'plan') naPlan(); else { if (U.tab === 'plan') history.pushState({ tab: v }, ''); else history.replaceState({ tab: v }, ''); U.tab = v; }
+  pokazTab();
+}
+window.addEventListener('popstate', () => {
+  if (U.pomin > 0) { U.pomin--; return; }
+  if (U.stos.length) { U.stos.pop(); U.kasuj = false; if (U.stos.length) odswiezArkusz(true); else schowajArkusz(); return; }
+  if (U.tab !== 'plan') { PRZEW[U.tab] = scrollY; U.tab = 'plan'; pokazTab(); }
+});
+async function ekranNieGasnie(on) {
+  try {
+    if (on && !blokada && navigator.wakeLock) { blokada = await navigator.wakeLock.request('screen'); blokada.addEventListener('release', () => { blokada = null; }); }
+    else if (!on && blokada) { const b = blokada; blokada = null; await b.release(); }
+  } catch (e) {}
+}
+const wroc = t => `<button class="wroc" data-act="wstecz">${ik('lewo')}${t}</button>`;
 
 function arkuszPrzepis(id, d, s) {
   return () => {
     const r = RB[id]; if (!r) return '';
-    const wPlanie = d && s; const f = wPlanie ? mnoznik(r, s) : 1;
+    const wPlanie = !!(d && s); const f = wPlanie ? mnoznik(r, s) : 1;
     const ing = skaluj(r, f), w = wartosci(ing), ul = S.ulub.includes(id), zj = wPlanie && (S.zjedz[d] || {})[s];
     const tagi = { wege: 'Bez mięsa', lowcarb: 'Mniej węgli', srodz: 'Śródziemnomorskie', tania: 'Tanie', fit: 'Dużo białka' };
-    const wstaw = !wPlanie ? `<h3>Dodaj do planu</h3><div class="grid2">${[dzis(), plus(dzis(), 1)].map((dd, i) => sloty().filter(([x]) => r.m.includes(typ(x))).map(([x, n]) =>
-      `<button class="btn sec" data-act="wstaw" data-v="${id}" data-d="${dd}" data-s="${x}">${i ? 'Jutro' : 'Dziś'} · ${n}</button>`).join('')).join('')}</div>` : '';
-    return `${talerz(r, true)}
-    <div style="display:flex;gap:10px;align-items:flex-start;margin-top:14px"><div style="flex:1;min-width:0">${wPlanie ? `<div class="mt">${slotInfo(s)[1]} · ${opisDnia(d)}</div>` : ''}<h2>${esc(r.n)}</h2>
-    <div class="meta"><span class="tag">${r.t} min</span>${(r.d || []).map(t => tagi[t] ? `<span class="tag">${tagi[t]}</span>` : '').join('')}</div></div>
-    <button class="heart${ul ? ' on' : ''}" data-act="ulub" data-v="${id}" aria-label="Ulubione" aria-pressed="${ul}">${ik('serce')}</button></div>
+    const akcje = wPlanie
+      ? `<button class="btn sec" data-act="wymien" data-d="${d}" data-s="${s}">${ik('swap')}Wymień</button><button class="btn${zj ? ' sec' : ''}" data-act="zjedz" data-d="${d}" data-s="${s}">${ik('ok')}${zj ? 'Odznacz' : 'Zjedzone'}</button>`
+      : `<button class="btn" data-act="wstaw-wybor" data-v="${id}">${ik('plus')}Dodaj do planu</button>`;
+    return `<div class="hero">${talerz(r, true)}<button class="heart na-foto${ul ? ' on' : ''}" data-act="ulub" data-v="${id}" aria-label="${ul ? 'Usuń z ulubionych' : 'Dodaj do ulubionych'}" aria-pressed="${ul}">${ik('serce')}</button></div>
+    ${wPlanie ? `<div class="mt" style="margin-top:14px">${ik(s)}${slotInfo(s)[1]} · ${opisDnia(d)}</div>` : ''}
+    <h2 style="margin-top:${wPlanie ? 4 : 14}px">${esc(r.n)}</h2>
+    <div class="meta"><span class="tag">${ik('zegar')}${r.t} min</span>${(r.d || []).map(t => tagi[t] ? `<span class="tag">${tagi[t]}</span>` : '').join('')}</div>
     <div class="macros"><div><b>${Math.round(w.k)}</b>kcal</div><div><b>${Math.round(w.b)}</b>białko g</div><div><b>${Math.round(w.t)}</b>tłuszcz g</div><div><b>${Math.round(w.w)}</b>węgle g</div></div>
     ${wPlanie && Math.abs(f - 1) > .05 ? `<p class="note">Porcja przeliczona pod Twój plan (×${fN(f, 2)} przepisu podstawowego).</p>` : ''}
-    <h3>Składniki</h3><ul class="card ing">${ing.map(([k, g]) => `<li><span>${esc(F[k] ? F[k].n : k)}</span><span>${ilosc(k, g)}</span></li>`).join('')}</ul>
-    <h3>Przygotowanie</h3><ol class="steps">${(r.kroki || []).map(k => `<li><span>${esc(k)}</span></li>`).join('')}</ol>
-    ${wPlanie ? `<div class="row" style="margin-top:20px"><button class="btn sec" data-act="wymien" data-d="${d}" data-s="${s}">${ik('swap')}Wymień</button><button class="btn" data-act="zjedz" data-d="${d}" data-s="${s}">${ik('ok')}${zj ? 'Odznacz' : 'Zjedzone'}</button></div>` : wstaw}`;
+    <h3>Składniki</h3><ul class="card ing">${ing.map(([k, g]) => `<li><span class="nm2">${ikonaSkl(k)}<span>${esc(F[k] ? F[k].n : k)}</span></span><span>${ilosc(k, g)}</span></li>`).join('')}</ul>
+    <div class="h3row"><h3>Przygotowanie</h3>${(r.kroki || []).length > 1 ? `<button class="lnk" data-act="gotuj" data-v="${id}">${ik('garnek')}Gotuję krok po kroku</button>` : ''}</div>
+    <ol class="steps">${(r.kroki || []).map(k => `<li><span>${esc(k)}</span></li>`).join('')}</ol>
+    <div class="akcje">${akcje}</div>`;
+  };
+}
+function arkuszWstaw(id) {
+  return () => {
+    const r = RB[id], pory = sloty().filter(([x]) => r.m.includes(typ(x)));
+    return `${wroc('Wróć do przepisu')}<h2>Kiedy to zjesz?</h2><p class="note">${esc(r.n)} zastąpi posiłek z planu.</p>
+    ${pory.length ? [dzis(), plus(dzis(), 1)].map((dd, i) => `<h3>${i ? 'Jutro' : 'Dziś'}</h3><div class="grid2">${pory.map(([x, n]) => `<button class="btn sec" data-act="wstaw" data-v="${id}" data-d="${dd}" data-s="${x}">${ik(x)}${n}</button>`).join('')}</div>`).join('')
+      : `<p>W Twoim planie nie ma pory na takie danie. Możesz zmienić liczbę posiłków w ustawieniach.</p>`}`;
   };
 }
 function arkuszWymien(d, s) {
   return () => {
-    const obecny = (planDnia(d)[s] || {}).id;
+    const obecny = (planDnia(d)[s] || {}).id, ro = RB[obecny];
+    const kO = ro ? wartosci(skaluj(ro, mnoznik(ro, s))).k : 0;
     const alt = pula(s).filter(r => r.id !== obecny).sort((a, b) => ocena(a, d, s) - ocena(b, d, s)).slice(0, 10);
-    return `<h2>Na co wymienić?</h2><p class="note" style="margin:4px 0 14px">${slotInfo(s)[1]} · ${opisDnia(d)}. Porcje już przeliczone pod Twój plan.</p>
-    ${alt.map(r => { const w = wartosci(skaluj(r, mnoznik(r, s)));
-      return `<button class="card alt" data-act="wybierz" data-v="${r.id}" data-d="${d}" data-s="${s}">${talerz(r)}<div class="info" style="flex:1;min-width:0"><div class="mn">${esc(r.n)}</div><div class="mk">${Math.round(w.k)} kcal · ${r.t} min</div></div></button>`; }).join('')}
-    <button class="btn sec" data-act="zamknij" style="margin-top:6px">Zostaw jak jest</button>`;
+    return `${U.stos.length > 1 ? wroc('Wróć do przepisu') : ''}<h2>Na co wymienić?</h2><p class="note" style="margin:4px 0 14px">${slotInfo(s)[1]} · ${opisDnia(d)}${ro ? `. Teraz: ${esc(ro.n)}, ${Math.round(kO)} kcal` : ''}. Porcje już przeliczone pod Twój plan.</p>
+    ${alt.map(r => { const k = wartosci(skaluj(r, mnoznik(r, s))).k, roz = Math.round(k - kO);
+      return `<button class="card alt" data-act="wybierz" data-v="${r.id}" data-d="${d}" data-s="${s}">${talerz(r)}<span class="info"><span class="mn">${esc(r.n)}</span><span class="mk">${Math.round(k)} kcal · ${r.t} min${ro && Math.abs(roz) >= 10 ? ` · <span class="roz">${roz > 0 ? '+' : '−'}${Math.abs(roz)} kcal</span>` : ''}</span></span></button>`; }).join('')}
+    <button class="btn sec" data-act="${U.stos.length > 1 ? 'wstecz' : 'zamknij'}" style="margin-top:6px">Zostaw jak jest</button>`;
   };
+}
+function arkuszGotuj(id) {
+  const fn = () => {
+    const r = RB[id], k = r.kroki || [], i = Math.max(0, Math.min(U.gk, k.length - 1));
+    return `${wroc('Wróć do przepisu')}<div class="gotuj"><div class="mt">${esc(r.n)} · krok ${i + 1} z ${k.length}</div><div class="dots">${k.map((_, j) => `<i class="${j === i ? 'on' : j < i ? 'by' : ''}"></i>`).join('')}</div>
+      <p class="krok">${esc(k[i])}</p>
+      <div class="row"><button class="btn sec" data-act="gk" data-v="-1"${i === 0 ? ' disabled' : ''}>${ik('lewo')}Wstecz</button>${i < k.length - 1 ? `<button class="btn" data-act="gk" data-v="1">Dalej${ik('prawo')}</button>` : `<button class="btn" data-act="wstecz">${ik('ok')}Gotowe</button>`}</div>
+      ${navigator.wakeLock ? '<p class="note center" style="margin-top:14px">Ekran nie zgaśnie, dopóki gotujesz.</p>' : ''}</div>`;
+  };
+  fn.gotuj = true; return fn;
 }
 function arkuszExtra() {
-  return () => `<h2>Co zjadłaś poza planem?</h2><p class="note" style="margin:4px 0 14px">Wpisz nazwę i przybliżone kalorie albo wybierz z listy.</p>
-    <div class="chips" style="flex-wrap:wrap">${[['Kawa z mlekiem', 40], ['Jabłko', 80], ['Ciastko', 150], ['Kawałek ciasta', 300], ['Garść orzechów', 180], ['Kromka chleba z masłem', 130], ['Lody (gałka)', 120], ['Lampka wina', 120]].map(([n, k]) => `<button class="chip" data-act="extra-szybko" data-n="${n}" data-k="${k}">${n} · ${k}</button>`).join('')}</div>
+  return () => `<h2>Co zjadłaś poza planem?</h2><p class="note" style="margin:4px 0 14px">Wybierz z listy albo wpisz nazwę i przybliżone kalorie.</p>
+    <div class="chips wrapc">${[['Kawa z mlekiem', 40], ['Jabłko', 80], ['Ciastko', 150], ['Kawałek ciasta', 300], ['Garść orzechów', 180], ['Kromka chleba z masłem', 130], ['Lody (gałka)', 120], ['Lampka wina', 120]].map(([n, k]) => `<button class="chip" data-act="extra-szybko" data-n="${n}" data-k="${k}">${n} · ${k}</button>`).join('')}</div>
     <div class="field" style="margin-top:14px"><label for="ex-n">Nazwa</label><input class="inp" id="ex-n" placeholder="np. pączek"></div>
-    <div class="field"><label for="ex-k">Kalorie</label><input class="inp" id="ex-k" type="number" inputmode="numeric" placeholder="kcal"></div>
+    <div class="field"><label for="ex-k">Kalorie</label><input class="inp" id="ex-k" type="text" inputmode="numeric" placeholder="kcal"></div>
     <button class="btn" data-act="extra-zapisz">Dodaj</button>`;
 }
-function arkuszUstawienia() {
+function arkuszWaga() {
+  return () => `<h2>Dzisiejsza waga</h2><p class="note" style="margin:4px 0 14px">Najlepiej rano, na czczo, zawsze o tej samej porze.</p>
+    <div class="waga-in"><input class="inp" id="nowa-waga" type="text" inputmode="decimal" placeholder="${fN(wagaTeraz())}" aria-label="Waga w kilogramach"><span>kg</span></div>
+    <button class="btn" data-act="waga-zapisz">Zapisz</button>`;
+}
+const SEK = [['dane', 'Dane o mnie', 'osoba'], ['dieta', 'Dieta i posiłki', 'obiad'], ['wyk', 'Czego nie jem', 'zakaz'], ['wyglad', 'Wygląd', 'oko'], ['kopia', 'Kopia zapasowa', 'pobierz'], ['dane-plan', 'Plan i usuwanie danych', 'kosz']];
+function arkuszUstawienia(sek) {
   return () => {
-    const p = S.profil, kc = zapotrzebowanie();
-    const q = U.wq.trim().toLowerCase();
-    const wyniki = q.length >= 2 ? Object.entries(F).filter(([k, f]) => f.cat !== 'przyprawy' && !S.wyklucz.includes(k) && f.n.toLowerCase().includes(q)).slice(0, 8) : [];
-    return `<h2>Ustawienia</h2>
-    <h3>O Tobie</h3>
-    <div class="field"><label for="u-imie">Imię</label><input class="inp" id="u-imie" value="${esc(p.imie)}"></div>
-    <div class="field"><div class="seg">${[['k', 'Kobieta'], ['m', 'Mężczyzna']].map(([v, n]) => `<button class="${p.plec === v ? 'on' : ''}" data-act="prof" data-k="plec" data-v="${v}">${n}</button>`).join('')}</div></div>
-    <div class="grid2"><div class="field"><label for="u-wiek">Wiek</label><input class="inp" id="u-wiek" type="number" inputmode="numeric" value="${p.wiek}"></div><div class="field"><label for="u-wzrost">Wzrost (cm)</label><input class="inp" id="u-wzrost" type="number" inputmode="numeric" value="${p.wzrost}"></div></div>
-    <div class="field"><label for="u-akt">Ruch na co dzień</label><select class="inp" id="u-akt">${AKT.map((a, i) => `<option value="${i}" ${p.akt === i ? 'selected' : ''}>${a.n} — ${a.o}</option>`).join('')}</select></div>
-    <div class="field"><label>Cel</label><div class="seg">${[['schudnac', 'Schudnąć'], ['utrzymac', 'Utrzymać'], ['przytyc', 'Przytyć']].map(([v, n]) => `<button class="${p.cel === v ? 'on' : ''}" data-act="prof" data-k="cel" data-v="${v}">${n}</button>`).join('')}</div></div>
-    ${p.cel === 'schudnac' ? `<div class="field"><div class="seg">${[[.25, 'Łagodnie'], [.5, 'Zwykle'], [.75, 'Szybciej']].map(([v, n]) => `<button class="${p.tempo === v ? 'on' : ''}" data-act="prof" data-k="tempo" data-v="${v}">${n}</button>`).join('')}</div></div>` : ''}
-    <div class="field"><label for="u-kcal">Kalorie dziennie (wyliczone: ${kc})</label><input class="inp" id="u-kcal" type="number" inputmode="numeric" placeholder="zostaw puste, żeby liczyć samo" value="${p.kcalWlasne || ''}"></div>
-    <button class="btn" data-act="prof-zapisz">Zapisz dane</button>
-    <h3>Dieta</h3>${Object.entries(DIETY).map(([v, d]) => `<button class="card alt" style="${S.dieta === v ? 'outline:3px solid var(--green)' : ''}" data-act="dieta" data-v="${v}"><div><div class="mn" style="margin:0">${d.n}</div><div class="mk">${d.o}</div></div></button>`).join('')}
-    <h3>Posiłki dziennie</h3><div class="seg">${[3, 4, 5].map(n => `<button class="${S.posilki === n ? 'on' : ''}" data-act="posilki" data-v="${n}">${n}</button>`).join('')}</div>
-    <h3>Czego nie jesz</h3>
-    <div class="chips" style="flex-wrap:wrap;margin-bottom:8px">${S.wyklucz.map(k => `<button class="chip on x" data-act="wyk-usun" data-v="${k}">${esc(F[k] ? F[k].n : k)} ${ik('x').replace('<svg', '<svg style="width:14px;height:14px"')}</button>`).join('') || '<span class="note">Nic nie wykluczono.</span>'}</div>
-    <div class="search">${ik('szukaj')}<input class="inp" id="wyk-q" placeholder="Wpisz produkt, np. ryba, mleko…" value="${esc(U.wq)}" autocomplete="off"></div>
-    <div id="wyk-wyniki">${wynikiWyk(wyniki)}</div>
-    <h3>Wygląd</h3>
-    <div class="field"><label>Wielkość liter</label><div class="seg">${[[false, 'Normalne'], [true, 'Duże']].map(([v, n]) => `<button class="${!!S.duze === v ? 'on' : ''}" data-act="duze" data-v="${v}">${n}</button>`).join('')}</div></div>
-    <div class="field"><label>Kolory</label><div class="seg">${[['auto', 'Jak w telefonie'], ['light', 'Jasne'], ['dark', 'Ciemne']].map(([v, n]) => `<button class="${S.motyw === v ? 'on' : ''}" data-act="motyw" data-v="${v}">${n}</button>`).join('')}</div></div>
-    <h3>Kopia zapasowa</h3>
-    <p class="note" style="margin:0 0 10px">Dane są tylko w tym telefonie. Zrób kopię przed zmianą telefonu albo czyszczeniem przeglądarki.</p>
-    <div class="row"><button class="btn sec" data-act="kopia">Zapisz kopię</button><label class="btn sec" for="wczytaj" style="cursor:pointer">Wczytaj kopię</label></div>
-    <input type="file" id="wczytaj" accept="application/json,.json" hidden>
-    <h3>Plan</h3>
-    <button class="btn sec" data-act="od-nowa">Ułóż plan od dziś od nowa</button>
-    <div style="margin-top:10px"><button class="btn danger" data-act="kasuj">${U.kasuj ? 'Na pewno? Dotknij jeszcze raz, żeby usunąć wszystko' : 'Usuń wszystkie dane'}</button></div>`;
+    const p = S.profil;
+    if (!sek) {
+      const opis = { dane: `${p.imie ? esc(p.imie) + ' · ' : ''}${p.wiek} lat · ${fK(kcalCel())} kcal dziennie`, dieta: `${DIETY[S.dieta].n} · ${S.posilki} ${odm(S.posilki, 'posiłek', 'posiłki', 'posiłków')}`,
+        wyk: S.wyklucz.length ? esc(S.wyklucz.map(k => F[k] ? F[k].n : k).slice(0, 3).join(', ')) + (S.wyklucz.length > 3 ? '…' : '') : 'Jem wszystko',
+        wyglad: `Litery ${S.duze ? 'duże' : 'normalne'} · ${{ auto: 'kolory jak w telefonie', light: 'jasne', dark: 'ciemne' }[S.motyw]}`, kopia: 'Zapisz albo wczytaj swoje dane', 'dane-plan': 'Ułóż plan od nowa, usuń dane' };
+      return `<h2>Ustawienia</h2><div class="card lista" style="margin-top:14px">${SEK.map(([k, n, i]) => `<button class="wiersz" data-act="ustawienia" data-v="${k}"><span class="wi">${ik(i)}</span><span class="wt"><b>${n}</b><small>${opis[k]}</small></span>${ik('prawo')}</button>`).join('')}</div>`;
+    }
+    const g = (U.stos.length > 1 ? wroc('Ustawienia') : '') + `<h2>${SEK.find(x => x[0] === sek)[1]}</h2>`;
+    if (sek === 'dane') { const kc = zapotrzebowanie(); return g + `<div style="margin-top:14px"></div>
+      <div class="field"><label for="u-imie">Imię</label><input class="inp" id="u-imie" value="${esc(p.imie)}"></div>
+      <div class="field"><label>Płeć</label><div class="seg">${[['k', 'Kobieta'], ['m', 'Mężczyzna']].map(([v, n]) => `<button class="${p.plec === v ? 'on' : ''}" data-act="prof" data-k="plec" data-v="${v}">${n}</button>`).join('')}</div></div>
+      <div class="grid2"><div class="field"><label for="u-wiek">Wiek</label><input class="inp" id="u-wiek" type="text" inputmode="numeric" value="${p.wiek}"></div><div class="field"><label for="u-wzrost">Wzrost (cm)</label><input class="inp" id="u-wzrost" type="text" inputmode="numeric" value="${p.wzrost}"></div></div>
+      <div class="field"><label for="u-akt">Ruch na co dzień</label><select class="inp" id="u-akt">${AKT.map((a, i) => `<option value="${i}" ${p.akt === i ? 'selected' : ''}>${a.n} — ${a.o}</option>`).join('')}</select></div>
+      <div class="field"><label>Cel</label><div class="seg">${[['schudnac', 'Schudnąć'], ['utrzymac', 'Utrzymać'], ['przytyc', 'Przytyć']].map(([v, n]) => `<button class="${p.cel === v ? 'on' : ''}" data-act="prof" data-k="cel" data-v="${v}">${n}</button>`).join('')}</div></div>
+      ${p.cel === 'schudnac' ? `<div class="field"><label>Tempo</label><div class="seg">${[[.25, 'Łagodnie'], [.5, 'Zwykle'], [.75, 'Szybciej']].map(([v, n]) => `<button class="${p.tempo === v ? 'on' : ''}" data-act="prof" data-k="tempo" data-v="${v}">${n}</button>`).join('')}</div></div>` : ''}
+      <div class="field"><label for="u-kcal">Kalorie dziennie (wyliczone: ${fK(kc)})</label><input class="inp" id="u-kcal" type="text" inputmode="numeric" placeholder="zostaw puste, żeby liczyć samo" value="${p.kcalWlasne || ''}"></div>
+      <button class="btn" data-act="prof-zapisz">Zapisz dane</button>`; }
+    if (sek === 'dieta') return g + `<h3>Rodzaj diety</h3>${wybory(dietyLista(), S.dieta, v => `data-act="dieta" data-v="${v}"`, DIK)}
+      <h3>Posiłki dziennie</h3><div class="seg">${[3, 4, 5].map(n => `<button class="${S.posilki === n ? 'on' : ''}" data-act="posilki" data-v="${n}" aria-pressed="${S.posilki === n}">${n}</button>`).join('')}</div>
+      <p class="note" style="margin-top:10px">Po zmianie plan od dziś układa się od nowa. Przez chwilę możesz to cofnąć.</p>`;
+    if (sek === 'wyk') { const q = U.wq.trim().toLowerCase();
+      const wyniki = q.length >= 2 ? Object.entries(F).filter(([k, f]) => f.cat !== 'przyprawy' && !S.wyklucz.includes(k) && f.n.toLowerCase().includes(q)).slice(0, 8) : [];
+      return g + `<p class="note" style="margin:4px 0 14px">Przepisów z tymi produktami nie będzie w planie ani na liście przepisów.</p>
+      <div class="chips wrapc" style="margin-bottom:10px">${S.wyklucz.map(k => `<button class="chip on" data-act="wyk-usun" data-v="${k}" aria-label="Przywróć: ${esc(F[k] ? F[k].n : k)}">${esc(F[k] ? F[k].n : k)}${ik('x')}</button>`).join('') || '<span class="note">Nic nie wykluczono.</span>'}</div>
+      <div class="search">${ik('szukaj')}<input class="inp" id="wyk-q" placeholder="Wpisz produkt, np. ryba, mleko…" value="${esc(U.wq)}" autocomplete="off"></div>
+      <div id="wyk-wyniki">${wynikiWyk(wyniki)}</div>`; }
+    if (sek === 'wyglad') return g + `<div class="field" style="margin-top:14px"><label>Wielkość liter</label><div class="seg">${[[false, 'Normalne'], [true, 'Duże']].map(([v, n]) => `<button class="${!!S.duze === v ? 'on' : ''}" data-act="duze" data-v="${v}" aria-pressed="${!!S.duze === v}"><span class="aa${v ? ' duze' : ''}">Aa</span>${n}</button>`).join('')}</div></div>
+      <div class="field"><label>Kolory</label><div class="seg">${[['auto', 'Jak w telefonie'], ['light', 'Jasne'], ['dark', 'Ciemne']].map(([v, n]) => `<button class="${S.motyw === v ? 'on' : ''}" data-act="motyw" data-v="${v}" aria-pressed="${S.motyw === v}">${n}</button>`).join('')}</div></div>`;
+    if (sek === 'kopia') return g + `<p class="note" style="margin:4px 0 14px">Dane są tylko w tym telefonie. Zrób kopię przed zmianą telefonu albo czyszczeniem przeglądarki.</p>
+      <div class="row"><button class="btn sec" data-act="kopia">${ik('pobierz')}Zapisz kopię</button><label class="btn sec" for="wczytaj" style="cursor:pointer">Wczytaj kopię</label></div>
+      <input type="file" id="wczytaj" accept="application/json,.json" hidden>`;
+    return g + `<h3>Plan</h3><button class="btn sec" data-act="od-nowa">Ułóż plan od dziś od nowa</button>
+      <h3>Dane</h3><button class="btn danger" data-act="kasuj">${U.kasuj ? 'Na pewno? Dotknij jeszcze raz, żeby usunąć wszystko' : 'Usuń wszystkie dane'}</button>
+      <p class="note" style="margin-top:10px">Usunięcia nie da się cofnąć. Zrób wcześniej kopię zapasową.</p>`;
   };
 }
-const wynikiWyk = w => w.map(([k, f]) => `<button class="card alt" data-act="wyk-dodaj" data-v="${k}"><div class="mn" style="margin:0;font-size:.95em">${esc(f.n)}</div><span style="margin-left:auto;color:var(--green)">${ik('plus').replace('<svg', '<svg style="width:20px;height:20px"')}</span></button>`).join('');
+const wynikiWyk = w => w.map(([k, f]) => `<button class="card alt" data-act="wyk-dodaj" data-v="${k}">${ikonaSkl(k)}<span class="mn" style="margin:0">${esc(f.n)}</span><span class="plusik">${ik('plus')}</span></button>`).join('');
 
 /* ---------- akcje ---------- */
-function toast(t) { const e = document.getElementById('toast'); e.textContent = t; e.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => e.hidden = true, 2200); }
+function toast(t, cofnijFn) {
+  const e = document.getElementById('toast'); toast.cb = cofnijFn || null;
+  e.innerHTML = `<span>${esc(t)}</span>${cofnijFn ? '<button data-act="toast-cofnij">Cofnij</button>' : ''}`;
+  e.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { e.hidden = true; toast.cb = null; }, cofnijFn ? 6000 : 3500);
+}
 const liczba = (id, min, max) => { const e = document.getElementById(id); if (!e) return null; const v = parseFloat(String(e.value).replace(',', '.')); return isFinite(v) && v >= min && v <= max ? v : null; };
-function przeplanuj(msg) { przyszlePlanyOdNowa(); zapisz(); widok(); odswiezArkusz(); if (msg) toast(msg); }
+const migawka = () => JSON.stringify({ dieta: S.dieta, posilki: S.posilki, wyklucz: S.wyklucz, plan: S.plan });
+function przeplanuj(msg, snap) {
+  przyszlePlanyOdNowa(); zapisz(); widok(); odswiezArkusz();
+  if (msg) toast(msg, snap ? () => { Object.assign(S, JSON.parse(snap)); zapisz(); widok(); odswiezArkusz(); toast('Cofnięte'); } : null);
+}
+const krokWjazd = k => { const o = document.querySelector('.onb'); if (o) o.classList.add(k); };
+const kierunek = v => v > (U.dzien || dzis()) ? 'zprawa' : 'zlewa';
 
 const AKCJE = {
-  tab: v => { U.tab = v; zamknij(); widok(); scrollTo(0, 0); },
-  dzien: v => { U.dzien = v; widok(); },
-  tydzien: v => { U.dzien = plus(U.dzien || dzis(), +v); widok(); },
-  zjedz: (v, ds) => { const d = ds.d || U.dzien, s = ds.s; const z = S.zjedz[d] || (S.zjedz[d] = {}); z[s] = !z[s]; if (!z[s]) delete z[s]; zapisz(); widok(); odswiezArkusz(); },
+  tab: v => ustawTab(v),
+  dzien: v => { if (v === U.dzien) return; U.wjazd = kierunek(v); U.dzien = v; widok(); },
+  tydzien: v => { const n = plus(U.dzien || dzis(), +v); U.wjazd = kierunek(n); U.dzien = n; widok(); },
+  zjedz: (v, ds) => { const d = ds.d || U.dzien, s = ds.s; const z = S.zjedz[d] || (S.zjedz[d] = {}); z[s] = !z[s]; if (!z[s]) delete z[s]; else { S.pokazano.wsk = true; try { navigator.vibrate && navigator.vibrate(10); } catch (e) {} } zapisz(); widok(); odswiezArkusz(); },
   przepis: (v, ds) => otworz(arkuszPrzepis(v, ds.d, ds.s)),
   wymien: (v, ds) => otworz(arkuszWymien(ds.d, ds.s)),
-  wybierz: (v, ds) => { planDnia(ds.d)[ds.s] = { id: v }; zapisz(); widok(); otworz(arkuszPrzepis(v, ds.d, ds.s)); toast('Wymienione'); },
-  wstaw: (v, ds) => { planDnia(ds.d)[ds.s] = { id: v }; zapisz(); zamknij(); U.tab = 'plan'; U.dzien = ds.d; widok(); toast('Dodane do planu'); },
+  wybierz: (v, ds) => {
+    planDnia(ds.d)[ds.s] = { id: v }; zapisz(); widok(); brzek();
+    if (U.stos.length >= 2) { U.stos.pop(); cofnij(1); }
+    U.stos[U.stos.length - 1] = arkuszPrzepis(v, ds.d, ds.s); odswiezArkusz(true); toast('Wymienione');
+  },
+  'wstaw-wybor': v => otworz(arkuszWstaw(v)),
+  wstaw: (v, ds) => { planDnia(ds.d)[ds.s] = { id: v }; zapisz(); naPlan(); U.dzien = ds.d; widok(); scrollTo(0, 0); toast('Dodane do planu'); },
+  gotuj: v => { U.gk = 0; otworz(arkuszGotuj(v)); },
+  gk: v => { U.gk += +v; odswiezArkusz(true); },
   ulub: v => { const i = S.ulub.indexOf(v); i < 0 ? S.ulub.push(v) : S.ulub.splice(i, 1); zapisz(); widok(); odswiezArkusz(); },
   fm: v => { U.fm = v; widok(); }, ff: v => { U.ff = U.ff === v ? '' : v; widok(); },
+  'filtry-czysc': () => { U.q = ''; U.fm = ''; U.ff = ''; widok(); },
+  'szukaj-czysc': () => { U.q = ''; widok(); const n = document.getElementById('szukaj'); if (n) n.focus(); },
+  'szukaj-podp': v => { U.q = v; U.fm = ''; U.ff = ''; widok(); },
   zakres: v => { S.zakupy.zakres = +v; zapisz(); widok(); },
-  kup: v => { S.zakupy.ok[v] = !S.zakupy.ok[v]; if (!S.zakupy.ok[v]) delete S.zakupy.ok[v]; zapisz(); widok(); },
-  'kup-czysc': () => { S.zakupy.ok = {}; zapisz(); widok(); },
+  kup: v => { S.zakupy.ok[v] = !S.zakupy.ok[v]; if (!S.zakupy.ok[v]) delete S.zakupy.ok[v]; else brzek(8); zapisz(); widok(); },
+  'kup-czysc': () => { const st = S.zakupy.ok; S.zakupy.ok = {}; zapisz(); widok(); toast('Wszystko odznaczone', () => { S.zakupy.ok = st; zapisz(); widok(); }); },
+  wyslij: async () => {
+    const { suma, od, ile } = listaZakupow(), ok = S.zakupy.ok;
+    const kl = Object.keys(suma).filter(k => F[k] && !ok[k]);
+    if (!kl.length) return toast('Nie ma nic do kupienia');
+    let txt = `Lista zakupów — ${ile === 1 ? opisDnia(od) : `${krotko(od)}–${krotko(plus(od, ile - 1))}`}\n`;
+    for (const [c, n] of KAT) { const el = kl.filter(k => F[k].cat === c); if (el.length) txt += `\n${n}:\n` + el.map(k => `• ${F[k].n} — ${bezTagow(ilosc(k, gZak(suma, k), true))}`).join('\n') + '\n'; }
+    try { if (navigator.share) { await navigator.share({ title: 'Lista zakupów', text: txt }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(txt); toast('Lista skopiowana. Wklej ją w SMS-ie albo w komunikatorze.'); } catch (e) { toast('Nie udało się skopiować listy'); }
+  },
   'extra-dodaj': () => otworz(arkuszExtra()),
-  'extra-szybko': (v, ds) => { dodajExtra(ds.n, +ds.k); },
+  'extra-szybko': (v, ds) => dodajExtra(ds.n, +ds.k),
   'extra-zapisz': () => { const n = (document.getElementById('ex-n').value || '').trim(), k = liczba('ex-k', 1, 5000); if (!n || !k) return toast('Wpisz nazwę i kalorie'); dodajExtra(n, Math.round(k)); },
-  'extra-usun': (v, ds) => { const a = S.extra[U.dzien] || []; a.splice(+ds.i, 1); zapisz(); widok(); },
-  'waga-zapisz': () => { const kg = liczba('nowa-waga', 30, 300); if (!kg) return toast('Wpisz wagę, np. 72,5'); const t = dzis(); S.waga = S.waga.filter(x => x.d !== t); S.waga.push({ d: t, kg }); S.waga.sort((a, b) => a.d < b.d ? -1 : 1); zapisz(); widok(); toast('Zapisane'); },
-  'cel-zapisz': () => { const e = document.getElementById('cel-wagi'); if (e && !e.value) { S.celWagi = null; zapisz(); widok(); return; } const kg = liczba('cel-wagi', 30, 300); if (!kg) return toast('Wpisz wagę docelową'); S.celWagi = kg; zapisz(); widok(); toast('Cel ustawiony'); },
-  ustawienia: () => { U.wq = ''; otworz(arkuszUstawienia()); },
+  'extra-usun': (v, ds) => { const d = U.dzien, a = S.extra[d] || [], i = +ds.i; const [x] = a.splice(i, 1); zapisz(); widok(); toast(`Usunięto: ${x.n}`, () => { a.splice(i, 0, x); S.extra[d] = a; zapisz(); widok(); }); },
+  'waga-dodaj': () => { otworz(arkuszWaga()); setTimeout(() => { const e = document.getElementById('nowa-waga'); if (e) e.focus(); }, 260); },
+  'waga-zapisz': () => { const kg = liczba('nowa-waga', 30, 300); if (!kg) return toast('Wpisz wagę, np. 72,5'); const t = dzis(); S.waga = S.waga.filter(x => x.d !== t); S.waga.push({ d: t, kg }); S.waga.sort((a, b) => a.d < b.d ? -1 : 1); zapisz(); zamknij(); widok(); toast('Zapisane'); },
+  'waga-usun': v => { const st = S.waga.slice(); S.waga = S.waga.filter(x => x.d !== v); zapisz(); widok(); toast('Wpis usunięty', () => { S.waga = st; zapisz(); widok(); }); },
+  wz: v => { U.wz = v; widok(); },
+  punkt: v => toast(v),
+  'cel-zapisz': () => { const e = document.getElementById('cel-wagi'); if (e && !e.value.trim()) { S.celWagi = null; zapisz(); widok(); return toast('Cel usunięty'); } const kg = liczba('cel-wagi', 30, 300); if (!kg) return toast('Wpisz wagę docelową, np. 65'); S.celWagi = kg; zapisz(); widok(); toast('Cel ustawiony'); },
+  ustawienia: v => { U.wq = ''; otworz(arkuszUstawienia(v || null)); },
   zamknij: () => zamknij(),
+  wstecz: () => history.back(),
+  'toast-cofnij': () => { const f = toast.cb; document.getElementById('toast').hidden = true; toast.cb = null; if (f) f(); },
+  pokazano: v => { S.pokazano[v] = true; zapisz(); widok(); },
+  instaluj: async () => { if (!instPrompt) return; instPrompt.prompt(); try { await instPrompt.userChoice; } catch (e) {} instPrompt = null; S.pokazano.inst = true; zapisz(); widok(); },
   prof: (v, ds) => { S.profil[ds.k] = ds.k === 'tempo' ? +v : v; zapisz(); widok(); odswiezArkusz(); },
   'prof-zapisz': () => {
     const p = S.profil; p.imie = (document.getElementById('u-imie').value || '').trim();
     const wiek = liczba('u-wiek', 14, 100), wz = liczba('u-wzrost', 120, 220); if (!wiek || !wz) return toast('Sprawdź wiek i wzrost');
-    p.wiek = wiek; p.wzrost = wz; p.akt = +document.getElementById('u-akt').value;
-    const kv = document.getElementById('u-kcal').value; p.kcalWlasne = kv ? (liczba('u-kcal', 1000, 4500) || null) : null;
-    if (kv && !p.kcalWlasne) return toast('Kalorie: wpisz od 1000 do 4500');
-    zapisz(); widok(); odswiezArkusz(); toast('Zapisane');
+    const kv = document.getElementById('u-kcal').value.trim(), kw = kv ? liczba('u-kcal', 1000, 4500) : null;
+    if (kv && !kw) return toast('Kalorie: wpisz od 1000 do 4500');
+    p.wiek = wiek; p.wzrost = wz; p.akt = +document.getElementById('u-akt').value; p.kcalWlasne = kw;
+    zapisz(); widok(); toast('Zapisane'); history.back();
   },
-  dieta: v => { S.dieta = v; przeplanuj('Plan od dziś ułożony od nowa'); },
-  posilki: v => { S.posilki = +v; przeplanuj('Plan od dziś ułożony od nowa'); },
-  'wyk-dodaj': v => { if (!S.wyklucz.includes(v)) S.wyklucz.push(v); U.wq = ''; przeplanuj(`Wykluczone: ${F[v].n}`); },
+  dieta: v => { if (v === S.dieta) return; const m = migawka(); S.dieta = v; przeplanuj(`Dieta: ${DIETY[v].n}. Plan ułożony od nowa`, m); },
+  posilki: v => { if (+v === S.posilki) return; const m = migawka(); S.posilki = +v; przeplanuj(`${v} ${odm(+v, 'posiłek', 'posiłki', 'posiłków')} dziennie. Plan ułożony od nowa`, m); },
+  'wyk-dodaj': v => { const m = migawka(); if (!S.wyklucz.includes(v)) S.wyklucz.push(v); U.wq = ''; przeplanuj(`Wykluczone: ${F[v].n}`, m); },
   'wyk-usun': v => { S.wyklucz = S.wyklucz.filter(x => x !== v); przeplanuj(); },
-  duze: v => { S.duze = v === 'true'; zapisz(); widok(); odswiezArkusz(); },
+  duze: v => { czytajPola(); S.duze = v === 'true'; zapisz(); widok(); odswiezArkusz(); },
   motyw: v => { S.motyw = v; zapisz(); widok(); odswiezArkusz(); },
-  'od-nowa': () => { przeplanuj('Nowy plan gotowy'); zamknij(); },
-  kasuj: () => { if (!U.kasuj) { U.kasuj = true; return odswiezArkusz(); } try { localStorage.removeItem(KEY); } catch (e) {} S = nowy(); U.krok = 0; U.szkic = {}; zamknij(); widok(); },
+  'od-nowa': () => { const m = migawka(); naPlan(); przeplanuj('Nowy plan gotowy', m); },
+  kasuj: () => { if (!U.kasuj) { U.kasuj = true; return odswiezArkusz(); } try { localStorage.removeItem(KEY); } catch (e) {} S = nowy(); U.krok = 0; U.szkic = {}; U.bledy = {}; naPlan(); widok(); scrollTo(0, 0); },
   kopia: () => {
     const blob = new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `dieta-mamy-kopia-${dzis()}.json`;
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Kopia zapisana w Pobranych');
   },
   szkic: (v, ds) => { czytajPola(); U.szkic[ds.k] = ['akt', 'tempo'].includes(ds.k) ? +v : v; widok(); },
-  'onb-wstecz': () => { czytajPola(); U.krok = Math.max(0, U.krok - 1); widok(); },
+  'onb-wstecz': () => { czytajPola(); U.bledy = {}; U.krok = Math.max(0, U.krok - 1); widok(); scrollTo(0, 0); krokWjazd('zlewa'); },
   'onb-dalej': () => {
     czytajPola();
-    if (U.krok === 1) { const s = U.szkic; const ok = +s.wiek >= 14 && +s.wiek <= 100 && +s.wzrost >= 120 && +s.wzrost <= 220 && +String(s.waga).replace(',', '.') >= 35 && +String(s.waga).replace(',', '.') <= 250;
-      if (!ok) { const e = document.getElementById('onb-blad'); if (e) e.textContent = 'Wpisz wiek (lata), wzrost (cm) i wagę (kg).'; return; }
-      U.szkic.waga = String(s.waga).replace(',', '.'); }
-    U.krok++; widok(); scrollTo(0, 0);
+    if (U.krok === 1) {
+      const s = U.szkic, bl = {}, wg = +String(s.waga || '').replace(',', '.');
+      if (!(+s.wiek >= 14 && +s.wiek <= 100)) bl.wiek = 'Wpisz wiek w latach, np. 58';
+      if (!(+s.wzrost >= 120 && +s.wzrost <= 220)) bl.wzrost = 'Wpisz wzrost w cm, np. 164';
+      if (!(wg >= 35 && wg <= 250)) bl.waga = 'Wpisz wagę w kg, np. 72,5';
+      U.bledy = bl;
+      if (Object.keys(bl).length) { widok(); const e = document.getElementById('o-' + Object.keys(bl)[0]); if (e) e.focus(); return; }
+      s.waga = String(wg);
+    }
+    U.krok++; widok(); scrollTo(0, 0); krokWjazd('zprawa');
   },
   'onb-koniec': () => { S.profil = profilZeSzkicu(); S.dieta = U.szkic.dieta || 'standard'; S.waga = [{ d: dzis(), kg: S.profil.waga }]; S.plan = {}; zapisz(); U.tab = 'plan'; U.dzien = dzis(); widok(); scrollTo(0, 0); },
 };
-function dodajExtra(n, k) { const d = U.dzien || dzis(); (S.extra[d] || (S.extra[d] = [])).push({ n, k }); zapisz(); zamknij(); widok(); toast('Dodane'); }
+function dodajExtra(n, k) { const d = U.dzien || dzis(); (S.extra[d] || (S.extra[d] = [])).push({ n, k }); zapisz(); zamknij(); widok(); toast(`Dodane: ${n}`); }
 
 document.addEventListener('click', e => {
-  const el = e.target.closest('[data-act]'); if (!el) return;
+  const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
   const f = AKCJE[el.dataset.act]; if (!f) return;
   e.preventDefault(); f(el.dataset.v, el.dataset);
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && U.sheet) zamknij();
-  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('li[data-act]')) { e.preventDefault(); e.target.click(); }
+  if (e.key === 'Escape' && U.stos.length) zamknij();
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('li[data-act],[role="button"][data-act]')) { e.preventDefault(); e.target.click(); }
+  if (e.key === 'Enter' && e.target.id === 'nowa-waga') AKCJE['waga-zapisz']();
 });
 document.addEventListener('input', e => {
   if (e.target.id === 'szukaj') { U.q = e.target.value; const pos = e.target.selectionStart; widok(); const n = document.getElementById('szukaj'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} }
@@ -482,12 +689,37 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   if (e.target.id !== 'wczytaj' || !e.target.files[0]) return;
   const fr = new FileReader();
-  fr.onload = () => { try { const s = JSON.parse(fr.result); if (!s || s.v !== 1 || !s.profil) throw 0; S = Object.assign(nowy(), s); zapisz(); zamknij(); widok(); toast('Kopia wczytana'); } catch (x) { toast('To nie jest kopia z tej aplikacji'); } };
+  fr.onload = () => { try { const s = JSON.parse(fr.result); if (!s || s.v !== 1 || !s.profil) throw 0; S = Object.assign(nowy(), s); S.pokazano = S.pokazano || {}; zapisz(); naPlan(); widok(); toast('Kopia wczytana'); } catch (x) { toast('To nie jest kopia z tej aplikacji'); } };
   fr.readAsText(e.target.files[0]);
 });
-// nowy dzień, gdy aplikacja leży otwarta przez noc
-let ostatniDzien = dzis();
-document.addEventListener('visibilitychange', () => { if (!document.hidden && dzis() !== ostatniDzien) { ostatniDzien = dzis(); U.dzien = dzis(); widok(); } });
+document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('koszyk')) U.koszyk = e.target.open; }, true);
 
+/* przesunięcie palcem po posiłkach zmienia dzień */
+let dotyk = null;
+document.addEventListener('touchstart', e => { const t = e.touches[0]; dotyk = !U.stos.length && e.target.closest('#posilki') ? { x: t.clientX, y: t.clientY } : null; }, { passive: true });
+document.addEventListener('touchend', e => {
+  if (!dotyk) return; const t = e.changedTouches[0], dx = t.clientX - dotyk.x, dy = t.clientY - dotyk.y; dotyk = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) { const n = plus(U.dzien || dzis(), dx < 0 ? 1 : -1); U.wjazd = dx < 0 ? 'zprawa' : 'zlewa'; U.dzien = n; widok(); }
+}, { passive: true });
+/* arkusz zamyka się przeciągnięciem w dół */
+(() => {
+  const box = document.querySelector('.sheet-box'); let y0 = null, dy = 0, t0 = 0;
+  box.addEventListener('touchstart', e => { if (box.scrollTop > 0 && !e.target.closest('.sheet-grip')) { y0 = null; return; } y0 = e.touches[0].clientY; dy = 0; t0 = Date.now(); box.style.transition = 'none'; }, { passive: true });
+  box.addEventListener('touchmove', e => { if (y0 === null) return; dy = e.touches[0].clientY - y0; if (dy > 0) { box.style.transform = `translateY(${dy}px)`; if (e.cancelable) e.preventDefault(); } else box.style.transform = ''; }, { passive: false });
+  box.addEventListener('touchend', () => { if (y0 === null) return; y0 = null; box.style.transition = '';
+    const v = dy / Math.max(1, Date.now() - t0);
+    if (dy > 90 || (dy > 30 && v > .6)) zamknij(); else box.style.transform = ''; });
+})();
+// nowy dzień, gdy aplikacja leży otwarta przez noc; po powrocie ekran znów nie gaśnie przy gotowaniu
+let ostatniDzien = dzis();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (dzis() !== ostatniDzien) { ostatniDzien = dzis(); U.dzien = dzis(); widok(); }
+  const top = U.stos[U.stos.length - 1]; if (top && top.gotuj) ekranNieGasnie(true);
+});
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instPrompt = e; if (!U.stos.length) widok(); });
+
+if (S.profil && !samodzielna()) { S.wizyty = (S.wizyty || 0) + 1; zapisz(); }
+history.replaceState(null, '');
 widok();
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
