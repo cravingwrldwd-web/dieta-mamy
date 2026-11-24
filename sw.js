@@ -1,5 +1,5 @@
 // Dieta Mamy — działa bez internetu. Zmień WERSJA przy każdej aktualizacji plików.
-const WERSJA = 'dieta-v6';
+const WERSJA = 'dieta-v7';
 const PLIKI = ['./', 'index.html', 'style.css', 'app.js', 'data/foods.js', 'data/recipes.js', 'manifest.webmanifest', 'icons/ikona.svg', 'icons/ikona-180.png', 'icons/ikona-192.png', 'icons/ikona-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(WERSJA).then(c => c.addAll(PLIKI)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== WERSJA).map(x => caches.delete(x)))).then(() => self.clients.claim())); });

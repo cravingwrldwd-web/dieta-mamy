@@ -7,7 +7,7 @@ const KEY = 'dietaMamy.v1';
 
 /* ---------- stan ---------- */
 const nowy = () => ({ v: 1, profil: null, dieta: 'standard', posilki: 4, wyklucz: [], plan: {}, zjedz: {}, extra: {},
-  zakupy: { zakres: 1, ok: {} }, waga: [], celWagi: null, ulub: [], duze: false, motyw: 'auto', pokazano: {}, wizyty: 0 });
+  zakupy: { zakres: 1, ok: {} }, waga: [], celWagi: null, ulub: [], duze: false, motyw: 'auto', paleta: 'a', pokazano: {}, wizyty: 0 });
 function wczytaj() {
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) { const n = Object.assign(nowy(), s); n.pokazano = n.pokazano || {}; return n; } } catch (e) {}
   return nowy();
@@ -16,7 +16,7 @@ let S = wczytaj();
 function zapisz() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 /* U = stan ekranu (nie zapisywany). stos = otwarte arkusze, pomin = ile zdarzeń „wstecz” wywołała sama aplikacja */
 const U = { tab: 'plan', dzien: null, q: '', fm: '', ff: '', krok: 0, szkic: {}, bledy: {}, stos: [], kasuj: false, wq: '', wz: '3m', gk: 0,
-  anim: {}, pomin: 0, wjazd: null, koszyk: false };
+  anim: {}, pomin: 0, wjazd: null, koszyk: true };
 
 /* ---------- daty ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -174,7 +174,7 @@ function talerz(r, duzy) {
 function ikonaSkl(k) {
   const f = F[k]; const kol = (KOL[f && f.cat] || ['#9cb2a3'])[0];
   const lit = ((f && f.n) || k).charAt(0).toUpperCase();
-  return `<span class="iks" style="background:${kol}33"><b style="color:${kol}">${lit}</b><img src="img/skladniki/${k}.webp" alt="" loading="lazy" onload="this.previousSibling.remove();this.classList.add('ok')" onerror="this.remove()"></span>`;
+  return `<span class="iks" style="background:${kol}33"><b style="color:${kol}">${lit}</b><img src="img/produkty/${k}.webp" alt="" loading="lazy" onload="this.previousSibling.remove();this.classList.add('ok')" onerror="this.remove()"></span>`;
 }
 function talerzRys(r, duzy) {
   if (!r) return `<div class="plate${duzy ? ' lg' : ''}"><div class="dish"></div></div>`;
@@ -202,6 +202,8 @@ let instPrompt = null;
 function widok() {
   document.documentElement.classList.toggle('duze', !!S.duze);
   if (S.motyw === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', S.motyw);
+  if (S.paleta && S.paleta !== 'a') document.documentElement.setAttribute('data-paleta', S.paleta); else document.documentElement.removeAttribute('data-paleta');
+  const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#f4f6f1';
   const app = document.getElementById('app');
   const chipsX = [...app.querySelectorAll('.chips')].map(c => c.scrollLeft);
   if (!R.length) { app.innerHTML = `<div class="wrap empty"><h2>Brak przepisów</h2><p>Nie udało się wczytać bazy przepisów. Odśwież stronę.</p></div>`; return; }
@@ -309,26 +311,55 @@ function listaZakupow() {
   return { suma, od, ile };
 }
 const gZak = (suma, k) => Math.round(suma[k] / (suma[k] >= 50 ? 5 : 1)) * (suma[k] >= 50 ? 5 : 1);
-function doKupienia() { const { suma } = listaZakupow(); return Object.keys(suma).filter(k => F[k] && F[k].cat !== 'przyprawy' && !S.zakupy.ok[k]).length; }
+function doKupienia() { const { suma } = listaZakupow(); return Object.keys(suma).filter(k => F[k] && F[k].cat !== 'przyprawy' && !S.zakupy.ok[k]).length + wlasne().filter(w => !w.ok).length; }
+/* ---------- zakupy: ile kupić w sklepie (opakowania, Mateusz 24.11) ---------- */
+const OPAK = { platki_owsiane: [500, 'o'], musli_bez_cukru: [400, 'o'], chleb_razowy: [500, 'bo'], tortilla_pelnoziarnista: [360, 'o'], makaron_pelnoziarnisty: [500, 'o'], makaron_penne: [500, 'o'],
+  ryz_bialy: [400, 'o'], ryz_brazowy: [400, 'o'], kasza_gryczana: [400, 'o'], kasza_jaglana: [400, 'o'], kasza_jeczmienna: [400, 'o'], maka_pszenna: [1000, 'o'], chrupkie_pieczywo: [200, 'o'],
+  mleko_2: [1000, 'ka'], jogurt_naturalny: [400, 'ku'], jogurt_grecki: [400, 'ku'], kefir: [400, 'bu'], twarog_polotlusty: [250, 'ks'], twarog_chudy: [250, 'ks'], serek_wiejski: [200, 'ku'],
+  ser_feta: [200, 'ks'], mozzarella: [125, 'kl'], ser_parmezan: [100, 'kw'], ser_zolty: [150, 'o'], maslanka: [1000, 'bu'], maslo: [200, 'ks'], smietana_18: [200, 'ku'],
+  szynka_drobiowa: [100, 'o'], tunczyk_w_wodzie: [120, 'pu'], sledz_filet: [200, 'o'], kapusta_kiszona: [500, 'o'], szpinak: [150, 'o'], rukola: [100, 'o'], groszek_zielony: [450, 'o'],
+  kukurydza_konserwowa: [285, 'pu'], mieszanka_warzyw: [450, 'o'], pieczarki: [250, 'o'], czosnek: [50, 'gl'], natka_pietruszki: [30, 'pe'], szczypiorek: [20, 'pe'], rzodkiewka: [150, 'pe'],
+  seler_naciowy: [400, 'pe'], truskawki: [250, 'o'], maliny: [125, 'o'], borowki: [125, 'o'], sliwki_suszone: [200, 'o'], rodzynki: [100, 'o'], daktyle: [200, 'o'],
+  ciecierzyca: [240, 'pu'], fasola_czerwona: [240, 'pu'], fasola_biala: [240, 'pu'], soczewica_czerwona: [400, 'o'], hummus: [200, 'o'], tofu: [180, 'ks'],
+  oliwa: [500, 'bu'], olej_rzepakowy: [1000, 'bu'], migdaly: [100, 'o'], orzechy_wloskie: [150, 'o'], siemie_lniane: [200, 'o'], pestki_slonecznika: [100, 'o'], pestki_dyni: [100, 'o'],
+  chia: [200, 'o'], maslo_orzechowe: [350, 'sl'], sezam: [100, 'o'], miod: [400, 'sl'], koncentrat_pomidorowy: [200, 'sl'], pomidory_w_puszce: [400, 'pu'], passata: [500, 'bu'],
+  bulion_warzywny: [1000, 'ka'], oliwki: [160, 'sl'], sos_sojowy: [150, 'bu'], mleko_kokosowe: [400, 'pu'], musztarda: [180, 'sl'], ocet_balsamiczny: [250, 'bu'],
+  brokul: [400, 'sz'], kalafior: [800, 'gl'], kapusta_biala: [1500, 'gl'], kapusta_pekinska: [800, 'gl'], salata: [150, 'gl'], por: [200, 'sz'], seler_korzen: [500, 'sz'], baklazan: [300, 'sz'], dynia: [1000, 'sz'] };
+const FORMY = { o: ['opakowanie', 'opakowania', 'opakowań'], bo: ['bochenek', 'bochenki', 'bochenków'], ka: ['karton', 'kartony', 'kartonów'], ku: ['kubek', 'kubki', 'kubków'],
+  bu: ['butelka', 'butelki', 'butelek'], ks: ['kostka', 'kostki', 'kostek'], kl: ['kulka', 'kulki', 'kulek'], kw: ['kawałek', 'kawałki', 'kawałków'], pu: ['puszka', 'puszki', 'puszek'],
+  gl: ['główka', 'główki', 'główek'], pe: ['pęczek', 'pęczki', 'pęczków'], sl: ['słoik', 'słoiki', 'słoików'], sz: ['sztuka', 'sztuki', 'sztuk'] };
+const gramy = g => g >= 1000 ? fN(g / 1000, 2) + ' kg' : g + ' g';
+function ileKupic(k, g) {
+  const f = F[k]; if (f && f.cat === 'przyprawy') return ['sprawdź, czy masz', ''];
+  const o = OPAK[k]; if (o) { const n = Math.max(1, Math.ceil(g / o[0] - .1)); const fo = o[1], dop = ['sz', 'gl', 'pe', 'bo'].includes(fo) ? '' : ['bu', 'ka'].includes(fo) ? `po ${o[0] >= 1000 ? fN(o[0] / 1000, 2) + ' l' : o[0] + ' ml'}` : `po ${gramy(o[0])}`; return [`${n} ${odm(n, ...FORMY[fo])}`, dop]; }
+  if (f && f.szt) { const n = Math.max(1, Math.ceil(g / f.szt - .15)); return [`${n} ${odm(n, ...FORMY.sz)}`, '']; }
+  return [gramy(g < 50 ? Math.ceil(g / 10) * 10 : g < 500 ? Math.ceil(g / 50) * 50 : Math.ceil(g / 100) * 100), ''];
+}
+const wlasne = () => S.zakupy.wlasne || (S.zakupy.wlasne = []);
 function ekranZakupy() {
   const { suma, od, ile } = listaZakupow();
-  const ok = S.zakupy.ok, z = S.zakupy.zakres || 1;
+  const ok = S.zakupy.ok, z = S.zakupy.zakres || 1, wl = wlasne();
   const klucze = Object.keys(suma).filter(k => F[k]);
-  const doKup = klucze.filter(k => F[k].cat !== 'przyprawy'), zost = doKup.filter(k => !ok[k]).length;
   const alfa = (a, b) => F[a].n.localeCompare(F[b].n, 'pl');
-  const wiersz = k => `<li class="${ok[k] ? 'on' : ''}" data-act="kup" data-v="${k}" role="checkbox" aria-checked="${!!ok[k]}" tabindex="0"><span class="bx">${ik('ok')}</span>${ikonaSkl(k)}<span class="nm">${esc(F[k].n)}</span><span class="ilosc">${ilosc(k, gZak(suma, k), true)}</span></li>`;
-  const grupy = KAT.map(([c, nazwa]) => {
-    const el = klucze.filter(k => F[k].cat === c && !ok[k]).sort(alfa);
-    return el.length ? `<h3>${nazwa}</h3><ul class="card ing shop">${el.map(wiersz).join('')}</ul>` : '';
+  const rz = (act, v, on, foto, nazwa, il, dop, x = '') => `<li class="${on ? 'on' : ''}" data-act="${act}" data-v="${v}" role="checkbox" aria-checked="${on}" tabindex="0">${foto}<span class="nm"><b>${esc(nazwa)}</b><small>${il}${dop ? ` <i>· ${dop}</i>` : ''}</small></span>${x}<span class="bx">${ik('ok')}</span></li>`;
+  const wiersz = k => { const [il, dop] = ileKupic(k, gZak(suma, k)); return rz('kup', k, !!ok[k], ikonaSkl(k), F[k].n, il, dop); };
+  const wWl = w => rz('wl-kup', w.id, !!w.ok, `<span class="iks wl">${ik('plus')}</span>`, w.n, 'dopisane przez Ciebie', '', `<button class="wl-x" data-act="wl-usun" data-v="${w.id}" aria-label="Usuń: ${esc(w.n)}">${ik('x')}</button>`);
+  const sekcja = (nazwa, el, kup, wsz) => el.length ? `<div class="kat"><h3>${nazwa}</h3><em>${kup}/${wsz}</em></div><ul class="card ing shop">${el.join('')}</ul>` : '';
+  const wlDo = wl.filter(w => !w.ok);
+  const grupy = sekcja('Dopisane', wlDo.map(wWl), wl.length - wlDo.length, wl.length) + KAT.map(([c, nazwa]) => {
+    const all = klucze.filter(k => F[k].cat === c), el = all.filter(k => !ok[k]).sort(alfa);
+    return sekcja(nazwa, el.map(wiersz), all.length - el.length, all.length);
   }).join('');
-  const kupione = klucze.filter(k => ok[k]).sort(alfa);
-  const koszyk = kupione.length ? `<details class="koszyk"${U.koszyk ? ' open' : ''}><summary>${ik('ok')}W koszyku (${kupione.length})</summary><ul class="card ing shop">${kupione.map(wiersz).join('')}</ul><button class="btn sec" style="margin-top:10px" data-act="kup-czysc">Odznacz wszystko</button></details>` : '';
+  const kupione = klucze.filter(k => ok[k]).sort(alfa).map(wiersz).concat(wl.filter(w => w.ok).map(wWl));
+  const koszyk = kupione.length ? `<details class="koszyk"${U.koszyk ? ' open' : ''}><summary>${ik('ok')}W koszyku (${kupione.length})</summary><ul class="card ing shop">${kupione.join('')}</ul><button class="btn sec" style="margin-top:10px" data-act="kup-czysc">Odznacz wszystko</button></details>` : '';
+  const doKup = klucze.filter(k => F[k].cat !== 'przyprawy'), wsz = doKup.length + wl.length, kup = doKup.filter(k => ok[k]).length + wl.filter(w => w.ok).length;
+  const proc = wsz ? (kup / wsz * 100).toFixed(1) + '%' : '0%';
   const zakresTxt = ile === 1 ? opisDnia(od) : `${krotko(od)} – ${krotko(plus(od, ile - 1))}`;
-  const proc = doKup.length ? ((doKup.length - zost) / doKup.length * 100).toFixed(1) + '%' : '0%';
-  const tresc = !klucze.length ? pusty('zakupy', 'Lista jest pusta', 'Najpierw zajrzyj do planu posiłków.', `<button class="btn" data-act="tab" data-v="plan">Przejdź do planu</button>`)
-    : `<div class="postep" role="status"><div>${zost ? `Zostało <b>${zost}</b> z ${doKup.length}` : `<b>Wszystko kupione</b>`}</div><div class="bar"><i ${anim('zak', 'width', 'width', proc, '0%')}></i></div></div>
-      ${grupy}${koszyk}<p class="note" style="margin-top:14px">Dotknij produktu w sklepie, a przejdzie do koszyka.</p>`;
-  return naglowek(zakresTxt, 'Lista zakupów', klucze.length ? `<button class="ico-btn lab" data-act="wyslij" aria-label="Wyślij listę">${ik('udost')}<span>Wyślij</span></button>` : '') + `<div class="wrap">
+  const dopisz = `<form class="dopisz" data-form="wl"><input class="inp" id="wl-n" placeholder="Dopisz swój produkt, np. kawa" autocomplete="off" maxlength="40" enterkeyhint="done" aria-label="Dopisz swój produkt"><button type="submit" class="btn" aria-label="Dopisz">${ik('plus')}</button></form>`;
+  const tresc = !klucze.length && !wl.length ? dopisz + pusty('zakupy', 'Lista jest pusta', 'Najpierw zajrzyj do planu posiłków albo dopisz coś powyżej.', `<button class="btn" data-act="tab" data-v="plan">Przejdź do planu</button>`)
+    : `${dopisz}<div class="postep" role="status"><div>${wsz - kup ? `<b>${kup}</b> z ${wsz} w koszyku` : `<b>Wszystko kupione</b>`}</div><div class="bar"><i ${anim('zak', 'width', 'width', proc, '0%')}></i></div></div>
+      ${grupy}${koszyk}`;
+  return naglowek(zakresTxt, 'Lista zakupów', klucze.length || wl.length ? `<button class="ico-btn lab" data-act="wyslij" aria-label="Wyślij listę">${ik('udost')}<span>Wyślij</span></button>` : '') + `<div class="wrap">
   <div class="seg">${[[1, 'Dziś'], [-1, 'Jutro'], [3, '3 dni'], [7, 'Tydzień']].map(([v, n]) => `<button class="${z === v ? 'on' : ''}" data-act="zakres" data-v="${v}" aria-pressed="${z === v}">${n}</button>`).join('')}</div>
   ${tresc}</div>`;
 }
@@ -531,7 +562,7 @@ function arkuszUstawienia(sek) {
     if (!sek) {
       const opis = { dane: `${p.imie ? esc(p.imie) + ' · ' : ''}${p.wiek} lat · ${fK(kcalCel())} kcal dziennie`, dieta: `${DIETY[S.dieta].n} · ${S.posilki} ${odm(S.posilki, 'posiłek', 'posiłki', 'posiłków')}`,
         wyk: S.wyklucz.length ? esc(S.wyklucz.map(k => F[k] ? F[k].n : k).slice(0, 3).join(', ')) + (S.wyklucz.length > 3 ? '…' : '') : 'Jem wszystko',
-        wyglad: `Litery ${S.duze ? 'duże' : 'normalne'} · ${{ auto: 'kolory jak w telefonie', light: 'jasne', dark: 'ciemne' }[S.motyw]}`, kopia: 'Zapisz albo wczytaj swoje dane', 'dane-plan': 'Ułóż plan od nowa, usuń dane' };
+        wyglad: `${(PALETY.find(p => p[0] === (S.paleta || 'a')) || PALETY[0])[1]} · litery ${S.duze ? 'duże' : 'normalne'} · ${{ auto: 'kolory jak w telefonie', light: 'jasne', dark: 'ciemne' }[S.motyw]}`, kopia: 'Zapisz albo wczytaj swoje dane', 'dane-plan': 'Ułóż plan od nowa, usuń dane' };
       return `<h2>Ustawienia</h2><div class="card lista" style="margin-top:14px">${SEK.map(([k, n, i]) => `<button class="wiersz" data-act="ustawienia" data-v="${k}"><span class="wi">${ik(i)}</span><span class="wt"><b>${n}</b><small>${opis[k]}</small></span>${ik('prawo')}</button>`).join('')}</div>`;
     }
     const g = (U.stos.length > 1 ? wroc('Ustawienia') : '') + `<h2>${SEK.find(x => x[0] === sek)[1]}</h2>`;
@@ -554,7 +585,8 @@ function arkuszUstawienia(sek) {
       <div class="search">${ik('szukaj')}<input class="inp" id="wyk-q" placeholder="Wpisz produkt, np. ryba, mleko…" value="${esc(U.wq)}" autocomplete="off"></div>
       <div id="wyk-wyniki">${wynikiWyk(wyniki)}</div>`; }
     if (sek === 'wyglad') return g + `<div class="field" style="margin-top:14px"><label>Wielkość liter</label><div class="seg">${[[false, 'Normalne'], [true, 'Duże']].map(([v, n]) => `<button class="${!!S.duze === v ? 'on' : ''}" data-act="duze" data-v="${v}" aria-pressed="${!!S.duze === v}"><span class="aa${v ? ' duze' : ''}">Aa</span>${n}</button>`).join('')}</div></div>
-      <div class="field"><label>Kolory</label><div class="seg">${[['auto', 'Jak w telefonie'], ['light', 'Jasne'], ['dark', 'Ciemne']].map(([v, n]) => `<button class="${S.motyw === v ? 'on' : ''}" data-act="motyw" data-v="${v}" aria-pressed="${S.motyw === v}">${n}</button>`).join('')}</div></div>`;
+      <div class="field"><label>Kolory</label><div class="palety" role="radiogroup" aria-label="Zestaw kolorów">${PALETY.map(([v, n, bg, sec, acc]) => { const on = (S.paleta || 'a') === v; return `<button class="pal${on ? ' on' : ''}" data-act="paleta" data-v="${v}" role="radio" aria-checked="${on}"><span class="pr" style="background:${bg}"><i style="background:${sec}"></i><b style="background:${acc}"></b></span><span class="pn">${n}</span>${on ? ik('ok') : ''}</button>`; }).join('')}</div></div>
+      <div class="field"><label>Jasność</label><div class="seg">${[['auto', 'Jak w telefonie'], ['light', 'Jasne'], ['dark', 'Ciemne']].map(([v, n]) => `<button class="${S.motyw === v ? 'on' : ''}" data-act="motyw" data-v="${v}" aria-pressed="${S.motyw === v}">${n}</button>`).join('')}</div></div>`;
     if (sek === 'kopia') return g + `<p class="note" style="margin:4px 0 14px">Dane są tylko w tym telefonie. Zrób kopię przed zmianą telefonu albo czyszczeniem przeglądarki.</p>
       <div class="row"><button class="btn sec" data-act="kopia">${ik('pobierz')}Zapisz kopię</button><label class="btn sec" for="wczytaj" style="cursor:pointer">Wczytaj kopię</label></div>
       <input type="file" id="wczytaj" accept="application/json,.json" hidden>`;
@@ -578,6 +610,10 @@ function przeplanuj(msg, snap) {
   if (msg) toast(msg, snap ? () => { Object.assign(S, JSON.parse(snap)); zapisz(); widok(); odswiezArkusz(); toast('Cofnięte'); } : null);
 }
 const krokWjazd = k => { const o = document.querySelector('.onb'); if (o) o.classList.add(k); };
+const PALETY = [["a", "Szałwia i koral", "#f4f6f1", "#2e5a44", "#c9431c"], ["b", "Morze i mandarynka", "#f2f6f7", "#12474f", "#bb4f0c"], ["c", "Śliwka i malina", "#faf6f8", "#43294f", "#c2255c"], ["d", "Granat i słońce", "#f7f6f1", "#1f3a5f", "#9a6200"], ["e", "Oliwka i terakota", "#f6f4ee", "#4a5a2a", "#b04a24"], ["f", "Lawenda i brzoskwinia", "#f7f5fb", "#4b3f78", "#b84f18"], ["g", "Las i miód", "#f3f5f0", "#1f3d2b", "#9a5f06"], ["h", "Kawa i mięta", "#f6f3ef", "#4a3428", "#177a62"], ["i", "Niebo i róż", "#f3f6fa", "#24466e", "#c92d64"], ["j", "Grafit i limonka", "#f4f5f4", "#2b3035", "#4d7a12"]];
+function odhacz(el, fn) { fn(); zapisz(); const on = el && el.classList.toggle('on'); if (on) brzek(8); clearTimeout(odhacz.t); odhacz.t = setTimeout(() => { if (U.tab === 'zakupy') widok(); }, el ? 320 : 0); }
+function dodajWl() { const e = document.getElementById('wl-n'), n = (e && e.value || '').trim(); if (!n) { if (e) e.focus(); return; } wlasne().push({ id: Date.now().toString(36), n: n.slice(0, 40), ok: false }); zapisz(); widok(); toast(`Dopisane: ${n}`); const e2 = document.getElementById('wl-n'); if (e2) e2.focus(); }
+document.addEventListener('submit', e => { if (e.target.dataset.form === 'wl') { e.preventDefault(); dodajWl(); } });
 const kierunek = v => v > (U.dzien || dzis()) ? 'zprawa' : 'zlewa';
 
 const AKCJE = {
@@ -602,14 +638,17 @@ const AKCJE = {
   'szukaj-czysc': () => { U.q = ''; widok(); const n = document.getElementById('szukaj'); if (n) n.focus(); },
   'szukaj-podp': v => { U.q = v; U.fm = ''; U.ff = ''; widok(); },
   zakres: v => { S.zakupy.zakres = +v; zapisz(); widok(); },
-  kup: v => { S.zakupy.ok[v] = !S.zakupy.ok[v]; if (!S.zakupy.ok[v]) delete S.zakupy.ok[v]; else brzek(8); zapisz(); widok(); },
-  'kup-czysc': () => { const st = S.zakupy.ok; S.zakupy.ok = {}; zapisz(); widok(); toast('Wszystko odznaczone', () => { S.zakupy.ok = st; zapisz(); widok(); }); },
+  kup: (v, ds, el) => odhacz(el, () => { S.zakupy.ok[v] = !S.zakupy.ok[v]; if (!S.zakupy.ok[v]) delete S.zakupy.ok[v]; }),
+  'wl-kup': (v, ds, el) => odhacz(el, () => { const w = wlasne().find(x => x.id === v); if (w) w.ok = !w.ok; }),
+  'wl-usun': v => { const l = wlasne(), i = l.findIndex(x => x.id === v); if (i < 0) return; const [w] = l.splice(i, 1); zapisz(); widok(); toast(`Usunięte: ${w.n}`, () => { l.splice(i, 0, w); zapisz(); widok(); }); },
+  'kup-czysc': () => { const st = S.zakupy.ok, wst = wlasne().map(w => w.ok); S.zakupy.ok = {}; wlasne().forEach(w => { w.ok = false; }); zapisz(); widok(); toast('Wszystko odznaczone', () => { S.zakupy.ok = st; wlasne().forEach((w, i) => { w.ok = !!wst[i]; }); zapisz(); widok(); }); },
   wyslij: async () => {
     const { suma, od, ile } = listaZakupow(), ok = S.zakupy.ok;
     const kl = Object.keys(suma).filter(k => F[k] && !ok[k]);
-    if (!kl.length) return toast('Nie ma nic do kupienia');
+    if (!kl.length && !wlasne().some(w => !w.ok)) return toast('Nie ma nic do kupienia');
     let txt = `Lista zakupów — ${ile === 1 ? opisDnia(od) : `${krotko(od)}–${krotko(plus(od, ile - 1))}`}\n`;
-    for (const [c, n] of KAT) { const el = kl.filter(k => F[k].cat === c); if (el.length) txt += `\n${n}:\n` + el.map(k => `• ${F[k].n} — ${bezTagow(ilosc(k, gZak(suma, k), true))}`).join('\n') + '\n'; }
+    for (const [c, n] of KAT) { const el = kl.filter(k => F[k].cat === c); if (el.length) txt += `\n${n}:\n` + el.map(k => `• ${F[k].n} — ${ileKupic(k, gZak(suma, k))[0]}`).join('\n') + '\n'; }
+    const wd = wlasne().filter(w => !w.ok); if (wd.length) txt += `\nDopisane:\n` + wd.map(w => `• ${w.n}`).join('\n') + '\n';
     try { if (navigator.share) { await navigator.share({ title: 'Lista zakupów', text: txt }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
     try { await navigator.clipboard.writeText(txt); toast('Lista skopiowana. Wklej ją w SMS-ie albo w komunikatorze.'); } catch (e) { toast('Nie udało się skopiować listy'); }
   },
@@ -644,6 +683,7 @@ const AKCJE = {
   'wyk-usun': v => { S.wyklucz = S.wyklucz.filter(x => x !== v); przeplanuj(); },
   duze: v => { czytajPola(); S.duze = v === 'true'; zapisz(); widok(); odswiezArkusz(); },
   motyw: v => { S.motyw = v; zapisz(); widok(); odswiezArkusz(); },
+  paleta: v => { if (!PALETY.some(p => p[0] === v)) return; S.paleta = v; zapisz(); widok(); odswiezArkusz(); brzek(8); },
   'od-nowa': () => { const m = migawka(); naPlan(); przeplanuj('Nowy plan gotowy', m); },
   kasuj: () => { if (!U.kasuj) { U.kasuj = true; return odswiezArkusz(); } try { localStorage.removeItem(KEY); } catch (e) {} S = nowy(); U.krok = 0; U.szkic = {}; U.bledy = {}; naPlan(); widok(); scrollTo(0, 0); },
   kopia: () => {
@@ -673,7 +713,7 @@ function dodajExtra(n, k) { const d = U.dzien || dzis(); (S.extra[d] || (S.extra
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
   const f = AKCJE[el.dataset.act]; if (!f) return;
-  e.preventDefault(); f(el.dataset.v, el.dataset);
+  e.preventDefault(); f(el.dataset.v, el.dataset, el);
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && U.stos.length) zamknij();
