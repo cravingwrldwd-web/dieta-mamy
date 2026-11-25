@@ -263,7 +263,7 @@ function ekranPlan() {
   const ex = (S.extra[d] || []).map((e, i) => `<div class="card extra"><span class="ex-ik">${ik('plus')}</span><span class="ex-n">${esc(e.n)}<small>${e.k} kcal · spoza planu</small></span><button class="ico44" data-act="extra-usun" data-i="${i}" aria-label="Usuń: ${esc(e.n)}">${ik('kosz')}</button></div>`).join('');
   const koniec = wszystkie ? `<div class="card done"><span>${ik('ok')}</span><div><b>Dzień zaliczony</b>${fK(z.k)} z ${fK(cel)} kcal</div></div>` : '';
   const wsk = S.pokazano.wsk ? '' : `<div class="card hint"><span class="hint-ik">${ik('zarowka')}</span><div><b>Jak to działa</b><p>Dotknij posiłku, a zobaczysz przepis i składniki. Kółko po prawej odhacza, że już zjedzone.</p><button class="btn sec" data-act="pokazano" data-v="wsk">Rozumiem</button></div></div>`;
-  return naglowek(maly, tyt, d !== t ? `<button class="chip-dzis" data-act="dzien" data-v="${t}">Dziś</button>` : '') + `<div class="wrap">${instal()}
+  return naglowek(maly, tyt, (d !== t ? `<button class="chip-dzis" data-act="dzien" data-v="${t}">Dziś</button>` : '') + `<button class="ico-btn lab" data-act="skan" aria-label="Skanuj kod kreskowy">${ik('kod')}<span>Skanuj</span></button>`) + `<div class="wrap">${instal()}
   <div class="week"><button class="arr" data-act="tydzien" data-v="-7" aria-label="Poprzedni tydzień">${ik('lewo')}</button><span class="wk">${tydz}</span><button class="arr" data-act="tydzien" data-v="7" aria-label="Następny tydzień">${ik('prawo')}</button></div>
   <div class="days">${dni}</div>
   <div class="card sum">
