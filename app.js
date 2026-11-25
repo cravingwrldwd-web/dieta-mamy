@@ -6,7 +6,7 @@ const RB = Object.fromEntries(R.map(r => [r.id, r]));
 const KEY = 'dietaMamy.v1';
 
 /* ---------- stan ---------- */
-const nowy = () => ({ v: 1, profil: null, dieta: 'standard', posilki: 4, wyklucz: [], plan: {}, zjedz: {}, extra: {},
+const nowy = () => ({ v: 1, profil: null, dieta: 'standard', posilki: 4, wyklucz: [], plan: {}, zjedz: {}, extra: {}, skany: {},
   zakupy: { zakres: 1, ok: {} }, waga: [], celWagi: null, ulub: [], duze: false, motyw: 'auto', paleta: 'a', pokazano: {}, wizyty: 0 });
 function wczytaj() {
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) { const n = Object.assign(nowy(), s); n.pokazano = n.pokazano || {}; return n; } } catch (e) {}
@@ -138,7 +138,8 @@ const I = {
   waga: '<path d="M4 20h16"/><path d="M5 15.5l4.5-5 3.5 3 6-7"/><path d="M15.5 6.5H19V10"/>',
   zebatka: '<path d="M10.3 4.3c.4-1.8 3-1.8 3.4 0a1.7 1.7 0 0 0 2.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1 2.5c1.8.4 1.8 3 0 3.4a1.7 1.7 0 0 0-1 2.6c.9 1.5-.9 3.3-2.4 2.4a1.7 1.7 0 0 0-2.6 1c-.4 1.8-3 1.8-3.4 0a1.7 1.7 0 0 0-2.6-1c-1.5.9-3.3-.9-2.4-2.4a1.7 1.7 0 0 0-1-2.6c-1.8-.4-1.8-3 0-3.4a1.7 1.7 0 0 0 1-2.5c-.9-1.6.9-3.3 2.4-2.4 1 .6 2.3.1 2.6-1.1z"/><circle cx="12" cy="12" r="3"/>',
   ok: '<path d="M5 12.5l4.5 4.5L19 7"/>', swap: '<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',
-  lewo: '<path d="M15 5l-7 7 7 7"/>', prawo: '<path d="M9 5l7 7-7 7"/>', szukaj: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  lewo: '<path d="M15 5l-7 7 7 7"/>',
+  prawo: '<path d="M9 5l7 7-7 7"/>', prawo: '<path d="M9 5l7 7-7 7"/>', szukaj: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
   serce: '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/>',
   sniadanie: '<path d="M4 10h12v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H15.5M8 3.5c0 1.5 1 1.5 1 3M12 3.5c0 1.5 1 1.5 1 3"/>',
   drugie: '<path d="M12 7.5c-2-1.8-7-1.2-7 4.2 0 4.3 3 8.3 5.2 8.3.8 0 1.2-.4 1.8-.4s1 .4 1.8.4c2.2 0 5.2-4 5.2-8.3 0-5.4-5-6-7-4.2z"/><path d="M12 7.5c0-2 1-3.5 3-4"/>',
@@ -149,6 +150,7 @@ const I = {
   kosz: '<path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
   udost: '<path d="M12 3.5v11M7.5 8L12 3.5 16.5 8"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
   garnek: '<path d="M4 10h16v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M2 10h2M20 10h2M9 6.5c0-1 1-1 1-2.5M14 6.5c0-1 1-1 1-2.5"/>',
+  kod: '<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13.5 8v8M17 8v8"/>',
   zarowka: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
   telefon: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
   osoba: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
@@ -462,11 +464,12 @@ function odswiezArkusz(odGory) {
   gotoweFoto(box);
   if (odGory) box.scrollTop = 0;
   ekranNieGasnie(!!fn.gotuj);
+  skaner(!!fn.skan);
 }
 function schowajArkusz() {
   const sh = document.getElementById('sheet'); U.kasuj = false; sh.classList.add('out'); document.body.style.overflow = '';
   clearTimeout(zegarZamk); zegarZamk = setTimeout(() => { sh.hidden = true; sh.classList.remove('out'); document.querySelector('.sheet-box').style.transform = ''; }, 200);
-  ekranNieGasnie(false);
+  ekranNieGasnie(false); skanStop();
 }
 function cofnij(n) { if (n > 0) { U.pomin++; history.go(-n); } }
 function zamknij() { const n = U.stos.length; if (!n) return; U.stos = []; schowajArkusz(); cofnij(n); }
@@ -544,11 +547,13 @@ function arkuszGotuj(id) {
   fn.gotuj = true; return fn;
 }
 function arkuszExtra() {
-  return () => `<h2>Co zjadłaś poza planem?</h2><p class="note" style="margin:4px 0 14px">Wybierz z listy albo wpisz nazwę i przybliżone kalorie.</p>
+  return () => { const ost = Object.entries(skany()).sort((a, b) => b[1].d - a[1].d).slice(0, 6); return `<h2>Co zjadłaś poza planem?</h2><p class="note" style="margin:4px 0 14px">Zeskanuj kod z opakowania, wybierz z listy albo wpisz nazwę i kalorie.</p>
+    <button class="btn skan-btn" data-act="skan">${ik('kod')}Zeskanuj kod kreskowy</button>
+    ${ost.length ? `<h3 style="margin-top:16px">Ostatnio skanowane</h3><div class="chips wrapc">${ost.map(([k, p]) => `<button class="chip" data-act="skan-pokaz" data-v="${k}">${esc(p.n)} · ${p.k} kcal/100 g</button>`).join('')}</div><h3 style="margin-top:16px">Szybkie dodanie</h3>` : ''}
     <div class="chips wrapc">${[['Kawa z mlekiem', 40], ['Jabłko', 80], ['Ciastko', 150], ['Kawałek ciasta', 300], ['Garść orzechów', 180], ['Kromka chleba z masłem', 130], ['Lody (gałka)', 120], ['Lampka wina', 120]].map(([n, k]) => `<button class="chip" data-act="extra-szybko" data-n="${n}" data-k="${k}">${n} · ${k}</button>`).join('')}</div>
     <div class="field" style="margin-top:14px"><label for="ex-n">Nazwa</label><input class="inp" id="ex-n" placeholder="np. pączek"></div>
     <div class="field"><label for="ex-k">Kalorie</label><input class="inp" id="ex-k" type="text" inputmode="numeric" placeholder="kcal"></div>
-    <button class="btn" data-act="extra-zapisz">Dodaj</button>`;
+    <button class="btn" data-act="extra-zapisz">Dodaj</button>`; };
 }
 function arkuszWaga() {
   return () => `<h2>Dzisiejsza waga</h2><p class="note" style="margin:4px 0 14px">Najlepiej rano, na czczo, zawsze o tej samej porze.</p>
@@ -655,6 +660,21 @@ const AKCJE = {
   'extra-dodaj': () => otworz(arkuszExtra()),
   'extra-szybko': (v, ds) => dodajExtra(ds.n, +ds.k),
   'extra-zapisz': () => { const n = (document.getElementById('ex-n').value || '').trim(), k = liczba('ex-k', 1, 5000); if (!n || !k) return toast('Wpisz nazwę i kalorie'); dodajExtra(n, Math.round(k)); },
+  skan: () => otworz(arkuszSkan()),
+  'skan-znowu': () => podmien(arkuszSkan()),
+  'skan-szukaj': () => { const e = document.getElementById('skan-kod'); znajdz(e && e.value); },
+  'skan-pokaz': v => pokazProdukt(v),
+  'skan-lat': (v, ds, el) => { const tr = SK.str && SK.str.getVideoTracks()[0]; if (!tr) return; SK.lat = !SK.lat; tr.applyConstraints({ advanced: [{ torch: SK.lat }] }).catch(() => {}); if (el) el.classList.toggle('on', SK.lat); },
+  'pr-g': v => { const e = document.getElementById('pr-g'); if (!e) return; e.value = v; const b = document.querySelector('[data-act=pr-dodaj]'); if (b) sumaPr(b.dataset.v); brzek(8); },
+  'pr-dodaj': v => { const p = skany()[v], g = gramyPr(); if (!p) return; if (!g) { toast('Wpisz, ile gramów zjadłaś'); return document.getElementById('pr-g').focus(); } p.g = g; dodajExtra(`${p.n} (${g} g)`, Math.round(p.k * g / 100)); },
+  'nm-zapisz': v => {
+    const n = (document.getElementById('nm-n').value || '').trim(), k = parseFloat((document.getElementById('nm-k').value || '').replace(',', '.')), g = parseFloat((document.getElementById('nm-g').value || '').replace(',', '.'));
+    if (!n) { toast('Wpisz nazwę produktu'); return document.getElementById('nm-n').focus(); }
+    if (!(k >= 0 && k <= 900)) { toast('Wpisz kalorie na 100 g'); return document.getElementById('nm-k').focus(); }
+    if (!(g > 0 && g <= 5000)) { toast('Wpisz, ile gramów zjadłaś'); return document.getElementById('nm-g').focus(); }
+    skany()[v] = { n: n.slice(0, 60), m: '', k: Math.round(k), b: 0, t: 0, w: 0, op: 0, por: 0, img: '', d: Date.now(), g: Math.round(g), wlasny: true };
+    dodajExtra(`${n} (${Math.round(g)} g)`, Math.round(k * g / 100));
+  },
   'extra-usun': (v, ds) => { const d = U.dzien, a = S.extra[d] || [], i = +ds.i; const [x] = a.splice(i, 1); zapisz(); widok(); toast(`Usunięto: ${x.n}`, () => { a.splice(i, 0, x); S.extra[d] = a; zapisz(); widok(); }); },
   'waga-dodaj': () => { otworz(arkuszWaga()); setTimeout(() => { const e = document.getElementById('nowa-waga'); if (e) e.focus(); }, 260); },
   'waga-zapisz': () => { const kg = liczba('nowa-waga', 30, 300); if (!kg) return toast('Wpisz wagę, np. 72,5'); const t = dzis(); S.waga = S.waga.filter(x => x.d !== t); S.waga.push({ d: t, kg }); S.waga.sort((a, b) => a.d < b.d ? -1 : 1); zapisz(); zamknij(); widok(); toast('Zapisane'); },
@@ -708,6 +728,132 @@ const AKCJE = {
   },
   'onb-koniec': () => { S.profil = profilZeSzkicu(); S.dieta = U.szkic.dieta || 'standard'; S.waga = [{ d: dzis(), kg: S.profil.waga }]; S.plan = {}; zapisz(); U.tab = 'plan'; U.dzien = dzis(); widok(); scrollTo(0, 0); },
 };
+/* ---------- skaner kodów kreskowych, jak w Fitatu (24.11) ---------- */
+const skany = () => S.skany || (S.skany = {});
+const SK = { str: null, t: null, det: null, zx: null, lat: false };
+const SKC = document.createElement('canvas');
+const r1 = x => Math.round((+x || 0) * 10) / 10;
+const naGorze = () => U.stos[U.stos.length - 1];
+function zaladujZx() {
+  return window.ZXing ? Promise.resolve() : new Promise((ok, zle) => { const s = document.createElement('script'); s.src = 'vendor/zxing-0.21.3.min.js'; s.onload = ok; s.onerror = zle; document.head.appendChild(s); });
+}
+function skanSt(txt) { const e = document.getElementById('skan-st'); if (e) e.textContent = txt; }
+function skanStop() { clearTimeout(SK.t); SK.lat = false; if (SK.str) { SK.str.getTracks().forEach(x => x.stop()); SK.str = null; } }
+async function skaner(on) {
+  if (!on) return skanStop();
+  try {
+    if (!SK.str) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return skanSt('Ta przeglądarka nie daje dostępu do aparatu. Wpisz cyfry spod kodu poniżej.');
+      const s = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+      if (!(naGorze() && naGorze().skan) || document.hidden) { s.getTracks().forEach(x => x.stop()); return; }
+      SK.str = s;
+    }
+    const v = document.getElementById('skan-v'); if (!v) return;
+    v.srcObject = SK.str; await v.play().catch(() => {});
+    const tr = SK.str.getVideoTracks()[0], cap = tr && tr.getCapabilities ? tr.getCapabilities() : {};
+    const lb = document.getElementById('skan-lat'); if (lb && cap.torch) lb.hidden = false;
+    if (!SK.det && !SK.zx && 'BarcodeDetector' in window) {
+      try { const f = await BarcodeDetector.getSupportedFormats(); if (f.includes('ean_13')) SK.det = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'].filter(x => f.includes(x)) }); } catch (e) {}
+    }
+    if (!SK.det && !SK.zx) {
+      skanSt('Przygotowuję skaner…'); await zaladujZx();
+      const h = new Map(), B = ZXing.BarcodeFormat;
+      h.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [B.EAN_13, B.EAN_8, B.UPC_A, B.UPC_E]); h.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      SK.zx = new ZXing.MultiFormatReader(); SK.zx.setHints(h);
+    }
+    skanSt('Nakieruj aparat na kod kreskowy na opakowaniu');
+    clearTimeout(SK.t); skanPetla();
+  } catch (e) {
+    skanStop();
+    skanSt(e && e.name === 'NotAllowedError' ? 'Nie ma zgody na aparat. Zezwól na niego w ustawieniach przeglądarki albo wpisz cyfry spod kodu poniżej.' : 'Nie udało się włączyć aparatu. Wpisz cyfry spod kodu poniżej.');
+  }
+}
+function czytajKod(zrodlo, w, h) {
+  const cw = Math.round(w * .86), ch = Math.round(h * .6);
+  SKC.width = cw; SKC.height = ch;
+  SKC.getContext('2d', { willReadFrequently: true }).drawImage(zrodlo, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, cw, ch);
+  try { return SK.zx.decodeWithState(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(SKC)))).getText(); } catch (e) { return null; }
+}
+async function skanPetla() {
+  const v = document.getElementById('skan-v'); if (!SK.str || !v) return;
+  let kod = null;
+  if (v.readyState >= 2 && v.videoWidth) {
+    if (SK.det) { try { const r = await SK.det.detect(v); kod = r[0] && r[0].rawValue; } catch (e) {} }
+    else if (SK.zx) kod = czytajKod(v, v.videoWidth, v.videoHeight);
+  }
+  if (!SK.str) return;
+  if (kod && /^\d{8,14}$/.test(kod)) { brzek(40); skanStop(); return znajdz(kod); }
+  SK.t = setTimeout(skanPetla, SK.det ? 120 : 150);
+}
+/* podmienia arkusz skanera na następny krok; gdy mama zamknęła okno w międzyczasie, nic nie otwiera */
+function podmien(fn) { if (!(naGorze() && naGorze().sk)) return false; U.stos[U.stos.length - 1] = fn; odswiezArkusz(true); return true; }
+function arkuszSkan() {
+  const fn = () => `<h2>Zeskanuj kod kreskowy</h2>
+    <div class="skan"><video id="skan-v" playsinline muted autoplay></video><i class="skan-ramka" aria-hidden="true"></i>
+    <button class="skan-lat" id="skan-lat" data-act="skan-lat" hidden aria-label="Latarka">${ik('zarowka')}</button></div>
+    <p class="note center skan-st" id="skan-st" role="status">Włączam aparat…</p>
+    <div class="dopisz"><input class="inp" id="skan-kod" inputmode="numeric" placeholder="albo wpisz cyfry spod kodu" maxlength="14" autocomplete="off" enterkeyhint="search" aria-label="Cyfry spod kodu kreskowego"><button class="btn" data-act="skan-szukaj" aria-label="Szukaj produktu">${ik('prawo')}</button></div>`;
+  fn.skan = fn.sk = true; return fn;
+}
+function arkuszSzukam(kod) { const fn = () => `<h2>Szukam produktu…</h2><p class="note">Kod ${esc(kod)}</p><div class="skan-szuka" aria-hidden="true"><i></i><i></i><i></i></div>`; fn.sk = true; return fn; }
+async function znajdz(kod) {
+  kod = String(kod || '').replace(/\D/g, '');
+  if (kod.length < 8) { toast('Kod ma od 8 do 14 cyfr'); const e = document.getElementById('skan-kod'); if (e) e.focus(); return; }
+  if (skany()[kod]) return pokazProdukt(kod);
+  if (!podmien(arkuszSzukam(kod))) return;
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${kod}.json?lc=pl&fields=nutriments,product_quantity,product_quantity_unit,quantity,serving_quantity,product_name,product_name_pl,brands,image_front_small_url`);
+    const d = await r.json(), p = d && d.status === 1 ? d.product : null, n = (p && p.nutriments) || {};
+    let k = n['energy-kcal_100g']; if (k == null && n['energy-kj_100g'] != null) k = n['energy-kj_100g'] / 4.184;
+    const nazwa = p && (p.product_name_pl || p.product_name || '').trim();
+    if (!p || k == null || !nazwa) return podmien(arkuszNieMa(kod, nazwa || '', false));
+    let jed = (p.product_quantity_unit || 'g').toLowerCase(), op = +p.product_quantity;
+    if (!op) { const m = String(p.quantity || '').match(/([\d.,]+)\s*(kg|g|ml|l)(?![a-z])/i); if (m) { const x = parseFloat(m[1].replace(',', '.')), j = m[2].toLowerCase(); op = j === 'kg' || j === 'l' ? x * 1000 : x; jed = j === 'kg' ? 'g' : j === 'l' ? 'ml' : j; } }
+    skany()[kod] = { n: nazwa, m: (p.brands || '').split(',')[0].trim(), k: Math.round(k), b: r1(n.proteins_100g), t: r1(n.fat_100g), w: r1(n.carbohydrates_100g),
+      op: (jed === 'g' || jed === 'ml') && op >= 5 && op <= 5000 ? Math.round(op) : 0, por: Math.round(+p.serving_quantity || 0), img: p.image_front_small_url || '', d: Date.now() };
+    zapisz(); pokazProdukt(kod);
+  } catch (e) { podmien(arkuszNieMa(kod, '', true)); }
+}
+function pokazProdukt(kod) { const p = skany()[kod]; if (!p) return; p.d = Date.now(); zapisz(); const fn = arkuszProdukt(kod); if (!podmien(fn)) otworz(fn); }
+const porcjeProd = p => { const w = [], b = new Set(); for (const [g, n] of [[p.op, 'Całe opakowanie'], [p.por, 'Porcja'], [100, '100 g']]) if (g > 0 && !b.has(g)) { b.add(g); w.push([g, n]); } return w; };
+function arkuszProdukt(kod) {
+  const fn = () => {
+    const p = skany()[kod]; if (!p) return '<h2>Nie ma już tego produktu</h2>';
+    const g0 = p.g || p.por || 100;
+    return `<div class="prod"><span class="prod-f">${ik('talerz')}${p.img ? `<img src="${esc(p.img)}" alt="" referrerpolicy="no-referrer" onload="this.classList.add('ok')" onerror="this.remove()">` : ''}</span>
+      <div><h2>${esc(p.n)}</h2><p class="note">${p.m ? esc(p.m) + ' · ' : ''}kod ${esc(kod)}</p></div></div>
+      <div class="macros"><div><b>${p.k}</b>kcal</div><div><b>${fN(p.b)}</b>białko g</div><div><b>${fN(p.t)}</b>tłuszcz g</div><div><b>${fN(p.w)}</b>węgle g</div></div>
+      <p class="note center" style="margin:6px 0 16px">wartości na 100 g</p>
+      <h3>Ile zjadłaś?</h3><div class="chips wrapc" id="pr-chips">${porcjeProd(p).map(([g, n]) => `<button class="chip${g === g0 ? ' on' : ''}" data-act="pr-g" data-v="${g}" aria-pressed="${g === g0}">${n === '100 g' ? n : `${n} · ${g} g`}</button>`).join('')}</div>
+      <div class="waga-in" style="margin-top:12px"><input class="inp" id="pr-g" type="text" inputmode="decimal" value="${g0}" aria-label="Ile gramów zjadłaś"><span>g</span></div>
+      <button class="btn" data-act="pr-dodaj" data-v="${esc(kod)}">${ik('plus')}<span id="pr-suma">Dodaj · ${Math.round(p.k * g0 / 100)} kcal</span></button>
+      <button class="btn sec" style="margin-top:10px" data-act="skan-znowu">${ik('kod')}Skanuj inny produkt</button>`;
+  };
+  fn.sk = true; return fn;
+}
+function arkuszNieMa(kod, nazwa, offline) {
+  const fn = () => `<h2>${offline ? 'Brak internetu' : 'Nie znam tego produktu'}</h2>
+    <p class="note" style="margin:4px 0 14px">${offline ? 'Nie mogę teraz sprawdzić kodu.' : `Kodu ${esc(kod)} nie ma w bazie produktów.`} Przepisz z opakowania nazwę i kalorie na 100 g. Zapamiętam produkt, więc następnym razem skaner go rozpozna.</p>
+    <div class="field"><label for="nm-n">Nazwa</label><input class="inp" id="nm-n" value="${esc(nazwa)}" placeholder="np. jogurt waniliowy"></div>
+    <div class="field"><label for="nm-k">Kalorie na 100 g</label><input class="inp" id="nm-k" type="text" inputmode="decimal" placeholder="kcal z tabelki na opakowaniu"></div>
+    <div class="field"><label for="nm-g">Ile gramów zjadłaś</label><input class="inp" id="nm-g" type="text" inputmode="decimal" value="100"></div>
+    <button class="btn" data-act="nm-zapisz" data-v="${esc(kod)}">${ik('plus')}Dodaj</button>
+    <button class="btn sec" style="margin-top:10px" data-act="skan-znowu">${ik('kod')}Skanuj jeszcze raz</button>`;
+  fn.sk = true; return fn;
+}
+function gramyPr() { const e = document.getElementById('pr-g'); const g = parseFloat(String(e && e.value || '').replace(',', '.')); return g > 0 && g <= 5000 ? Math.round(g) : 0; }
+function sumaPr(kod) {
+  const p = skany()[kod], g = gramyPr(), s = document.getElementById('pr-suma'); if (!p || !s) return;
+  s.textContent = g ? `Dodaj · ${Math.round(p.k * g / 100)} kcal` : 'Wpisz gramy';
+  document.querySelectorAll('#pr-chips .chip').forEach(c => { const on = +c.dataset.v === g; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); });
+}
+document.addEventListener('input', e => { if (e.target.id === 'pr-g') { const b = document.querySelector('[data-act=pr-dodaj]'); if (b) sumaPr(b.dataset.v); } });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (e.target.id === 'skan-kod') { e.preventDefault(); znajdz(e.target.value); }
+  else if (e.target.id === 'pr-g') { e.preventDefault(); const b = document.querySelector('[data-act=pr-dodaj]'); if (b) b.click(); }
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) skanStop(); else if (naGorze() && naGorze().skan) skaner(true); });
 function dodajExtra(n, k) { const d = U.dzien || dzis(); (S.extra[d] || (S.extra[d] = [])).push({ n, k }); zapisz(); zamknij(); widok(); toast(`Dodane: ${n}`); }
 
 document.addEventListener('click', e => {
